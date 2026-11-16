@@ -48,7 +48,7 @@ function nva_request( $path, $ip, $ua = NVA_CHROME, array $extra = array() ) {
 function nva_beacon( array $payload, $ip, $ua = NVA_CHROME ) {
 	$_SERVER['REMOTE_ADDR']     = $ip;
 	$_SERVER['HTTP_USER_AGENT'] = $ua;
-	$request                    = new WP_REST_Request( 'POST', '/nemvo/v1/e' );
+	$request                    = new WP_REST_Request( 'POST', '/' . NemvoAnalytics\Collector::NS . '/e' );
 	$request->set_body( wp_json_encode( $payload ) );
 	$request->set_header( 'accept-language', 'sv-SE' );
 	$request->set_header( 'sec-fetch-site', 'same-origin' );

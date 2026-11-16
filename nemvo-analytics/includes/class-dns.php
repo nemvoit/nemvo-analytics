@@ -247,7 +247,7 @@ class Dns {
 			return array(); // NXDOMAIN.
 		}
 		if ( 0 !== $rcode || 1 !== $header['qd'] ) {
-			return null; // SERVFAIL, REFUSED, ...
+			return null; // A server failure or a refused query.
 		}
 
 		// The question must be ours.

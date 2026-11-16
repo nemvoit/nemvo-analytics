@@ -44,10 +44,15 @@ class Cli {
 		if ( $migration ) {
 			\WP_CLI::line( sprintf( 'Migration: %s -> %s running (%s)', $migration['from'], $migration['to'], Migration::progress( $migration )['message'] ) );
 		}
-		$queue = Queue::config();
-		\WP_CLI::line( 'Queue:     ' . ( $queue ? sprintf( '%s:%d db %d (%s), %s waiting', $queue['host'], $queue['port'], $queue['db'], $queue['source'], null === Queue::length() ? 'unreachable: ' . Queue::error() : number_format( (int) Queue::length() ) ) : 'off (hits are written directly)' ) );
+		$queue   = Queue::config();
+		$length  = $queue ? Queue::length() : null;
+		$waiting = null === $length ? 'unreachable: ' . Queue::error() : number_format( (int) $length );
+		\WP_CLI::line( 'Queue:     ' . ( $queue ? sprintf( '%s:%d db %d (%s), %s waiting', $queue['host'], $queue['port'], $queue['db'], $queue['source'], $waiting ) : 'off (hits are written directly)' ) );
 		\WP_CLI::line( 'Cap:       ' . ( Cap::enabled() ? Cap::config()['url'] : ( Settings::get( 'pow_enabled' ) ? 'off (built-in proof of work on)' : 'off' ) ) );
-		foreach ( array( 'geo' => 'Location', 'asn' => 'Network' ) as $kind => $label ) {
+		foreach ( array(
+			'geo' => 'Location',
+			'asn' => 'Network',
+		) as $kind => $label ) {
 			$info = Geo::database_info( $kind );
 			\WP_CLI::line( sprintf( '%-10s %s', $label . ':', $info ? $info['type'] . ' (' . $info['built'] . ') ' . $info['path'] : 'no database' ) );
 		}
@@ -123,6 +128,13 @@ class Cli {
 	 * Write queued hits to the database.
 	 *
 	 * ## OPTIONS
+	 *
+	 * <action>
+	 * : What to do.
+	 * ---
+	 * options:
+	 *   - work
+	 * ---
 	 *
 	 * [--loop]
 	 * : Keep running (for a worker container or a systemd service).
@@ -245,6 +257,9 @@ class Cli {
 	 * @param array $assoc_args Options.
 	 */
 	public function seed( $args, $assoc_args ) {
+		if ( ! class_exists( Seeder::class ) ) {
+			\WP_CLI::error( 'The demo traffic generator is part of the development copy (https://github.com/fpoller/nemvo-analytics), not of the released plugin.' );
+		}
 		if ( ! DB::conn() || ! DB::maybe_install() ) {
 			\WP_CLI::error( 'Statistics database not available: ' . DB::error() );
 		}

@@ -152,7 +152,7 @@ class Bot {
 			$flags |= self::NO_CLIENT;
 		} else {
 			$flags |= self::JS;
-			$client = absint( $data['b'] );
+			$client = absint( Collector::field( $data, 'b' ) );
 			if ( $client & ( 1 | 16 ) ) {
 				$flags |= self::HEADLESS;
 			}
@@ -161,7 +161,7 @@ class Bot {
 			}
 		}
 
-		$referrer = Referrer::host_of( isset( $data['r'] ) ? (string) $data['r'] : '' );
+		$referrer = Referrer::host_of( Collector::field( $data, 'r' ) );
 		if ( '' !== $referrer && self::is_spam_referrer( $referrer ) ) {
 			$flags |= self::REF_SPAM;
 		}

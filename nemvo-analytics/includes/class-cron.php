@@ -23,6 +23,11 @@ class Cron {
 	const WEEKLY = 'nemvo_analytics_weekly';
 
 	/**
+	 * The queue's one-minute schedule (called "nemvo_minute" up to 1.0.2).
+	 */
+	const SCHEDULE = 'nemvo_analytics_minute';
+
+	/**
 	 * Hook in.
 	 */
 	public static function init() {
@@ -44,7 +49,7 @@ class Cron {
 	 * @return array
 	 */
 	public static function schedules( $schedules ) {
-		$schedules['nemvo_minute'] = array(
+		$schedules[ self::SCHEDULE ] = array(
 			'interval' => MINUTE_IN_SECONDS,
 			'display'  => __( 'Every minute', 'nemvo-analytics' ),
 		);
@@ -71,7 +76,7 @@ class Cron {
 			wp_schedule_event( $next->getTimestamp(), 'weekly', self::WEEKLY );
 		}
 		if ( Queue::enabled() && ! wp_next_scheduled( self::QUEUE ) ) {
-			wp_schedule_event( time() + MINUTE_IN_SECONDS, 'nemvo_minute', self::QUEUE );
+			wp_schedule_event( time() + MINUTE_IN_SECONDS, self::SCHEDULE, self::QUEUE );
 		} elseif ( ! Queue::enabled() ) {
 			wp_clear_scheduled_hook( self::QUEUE );
 		}

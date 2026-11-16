@@ -22,6 +22,20 @@ $services = array_merge(
 	)
 );
 
+// Valkey keeps no data across restarts, and Cap stores its keys there: make a new key when the old one is gone.
+if ( '' !== $services['cap_site_key'] ) {
+	$probe = wp_remote_post(
+		'http://cap:3000/' . rawurlencode( $services['cap_site_key'] ) . '/challenge',
+		array(
+			'headers' => array( 'Content-Type' => 'application/json' ),
+			'body'    => '{}',
+		)
+	);
+	if ( ! is_wp_error( $probe ) && false !== stripos( wp_remote_retrieve_body( $probe ), 'invalid site key' ) ) {
+		$services['cap_site_key'] = '';
+	}
+}
+
 if ( '' === $services['cap_site_key'] ) {
 	$admin_key = (string) getenv( 'CAP_ADMIN_KEY' );
 	$login     = null;
@@ -61,5 +75,6 @@ if ( '' === $services['cap_site_key'] ) {
 	}
 }
 
-update_option( Settings::SERVICES_OPTION, $services, true );
+// Stored like the settings page stores it: secrets encrypted, not autoloaded.
+update_option( Settings::SERVICES_OPTION, Settings::encrypt_secrets( Settings::SERVICES_OPTION, $services ) );
 WP_CLI::success( 'Valkey and Cap are configured (both off until enabled in the settings).' );

@@ -37,7 +37,7 @@ await page.goto(`${BASE}/wp-login.php`, { waitUntil: 'networkidle0' });
 await page.type('#user_login', 'admin');
 await page.type('#user_pass', 'admin');
 await Promise.all([page.waitForNavigation({ waitUntil: 'networkidle0' }), page.click('#wp-submit')]);
-await page.evaluate(() => localStorage.setItem('nva-theme', '"light"'));
+await page.evaluate(() => localStorage.setItem('nemvo-analytics-theme', '"light"'));
 
 const ready = () => page.waitForFunction(() => document.querySelectorAll('#nva-app canvas').length >= 5 && !document.querySelector('#nva-app .is-loading'), { timeout: 30000 });
 const scrollTo = async (selector, offset = 90) => {
@@ -70,12 +70,12 @@ await page.waitForSelector('#nva-app canvas');
 await sleep(1000);
 await shot(5);
 
-await page.evaluate(() => localStorage.setItem('nva-theme', '"dark"'));
+await page.evaluate(() => localStorage.setItem('nemvo-analytics-theme', '"dark"'));
 await page.goto(`${BASE}/wp-admin/admin.php?page=nemvo-analytics#range=30d`, { waitUntil: 'networkidle0' });
 await ready();
 await sleep(800);
 await shot(6);
-await page.evaluate(() => localStorage.setItem('nva-theme', '"auto"'));
+await page.evaluate(() => localStorage.setItem('nemvo-analytics-theme', '"auto"'));
 
 await page.goto(`${BASE}/wp-admin/admin.php?page=nemvo-analytics-settings`, { waitUntil: 'networkidle0' });
 await sleep(300);

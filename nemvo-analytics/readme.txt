@@ -4,7 +4,7 @@ Tags: analytics, statistics, privacy, bot detection, b2b
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.2
+Stable tag: 1.0.3
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -12,9 +12,9 @@ Self-hosted, cookieless web analytics with company identification and bot detect
 
 == Description ==
 
-Nemvo Analytics shows where your visitors come from, what they read, how long they stay, which companies visit and which visits are bots. Everything is stored in your own database and nothing is sent to third parties. It sets no cookies, so in most EU interpretations it needs no consent banner.
+Nemvo Analytics shows where your visitors come from, what they read, how long they stay, which companies visit and which visits are bots. Everything is stored in your own database and no visitor data is sent to third parties. It sets no cookies, so in most EU interpretations it needs no consent banner.
 
-It is made for sites that want Google Analytics-style reports without Google, with extra insight for B2B sites: which organisations visit, and whether a visit came from a prospect's office, a home connection or a datacenter.
+It is made for sites that want full traffic reports without an external analytics service, with extra insight for B2B sites: which organisations visit, and whether a visit came from a prospect's office, a home connection or a datacenter.
 
 = Reports =
 
@@ -34,7 +34,7 @@ It is made for sites that want Google Analytics-style reports without Google, wi
 
 = Companies and networks =
 
-Each visit's network is looked up in a free ASN database (DB-IP, downloaded when you click). Organisations with their own network are named directly. For connections from an internet provider, a reverse DNS lookup tells an office line (for example fw.acme.se, which names the company) from a home line. The IP address and hostname are never stored; only the network owner, its type and the company name or domain are.
+Each visit's network is looked up in a free ASN database (DB-IP, downloaded when you click). Organisations with their own network are named directly. For connections from an internet provider, an optional reverse DNS lookup (off by default, see External services) tells an office line (for example fw.acme.se, which names the company) from a home line. The IP address and hostname are never stored; only the network owner, its type and the company name or domain are.
 
 = Server-side and in the browser =
 
@@ -44,15 +44,16 @@ Every page request is recorded on the server as it is served, so visits that nev
 
 Nothing is blocked and nothing is lost: every visit is recorded with a bot score and the signals behind it. The dashboard shows people by default and can switch to automated traffic or everything. Signals include crawler user agents, automated browsers, page requests that never run JavaScript, hits sent without the tracker, referrer spam, datacenter networks, impossible browsing speed and missing browser headers on one side, and real mouse, touch or keyboard use and a solved proof of work on the other.
 
-For stronger proof, connect a self-hosted [Cap](https://capjs.js.org) server. The Cap widget comes with the plugin, and WordPress relays the challenge so visitors only ever talk to your site.
+For stronger proof, connect a self-hosted [Cap](https://capjs.js.org) server. The Cap widget comes with the plugin, and WordPress relays the challenge so visitors only ever talk to your site (unless you set a public Cap address).
 
 = Privacy =
 
-* No cookies, no local storage, no fingerprinting.
+* No cookies, no identifiers stored in the browser, no fingerprinting. The only thing ever stored in the browser is an opt-out flag in local storage, set when a visitor unticks the opt-out checkbox or the site owner opens a page with `#nemvo-analytics-ignore`.
 * Visitors are counted with a salted hash of IP address and browser; the salt is replaced daily (or weekly or monthly), so visitors cannot be followed over time.
 * IP addresses are never stored. Screen sizes are bucketed and browser versions dropped.
 * Do Not Track and Global Privacy Control are respected by default (Brave sends Global Privacy Control, and Firefox does in private windows); you can turn that off. Logged-in roles, IP ranges and paths can be excluded.
 * Suggested privacy policy text and an opt-out shortcode: `[nemvo_analytics_optout]`.
+* There is no personal data exporter or eraser, because nothing stored identifies a person: no IP addresses, no user ids, and visitor hashes that change daily.
 * Data older than a set number of days (395 by default) is deleted automatically.
 
 = Built for speed =
@@ -65,10 +66,12 @@ For stronger proof, connect a self-hosted [Cap](https://capjs.js.org) server. Th
 
 = For developers =
 
-* `nvaTrack( name, label )` and `data-nva-event` attributes for your own events.
-* Filters: `nemvo_analytics_should_track`, `nemvo_analytics_allowed_hosts`, `nemvo_analytics_spam_referrers`, `nemvo_analytics_dns_servers`.
-* WP-CLI: `wp nemvo-analytics status | install | migrate | queue work | lookup | geoip-update | purge | report | seed`.
-* Configuration through wp-config.php constants or environment variables (`NEMVO_ANALYTICS_DB_*`, `NEMVO_ANALYTICS_QUEUE_URL`, `NEMVO_ANALYTICS_CAP_*`, `_FILE` variants for Docker secrets). The settings page shows ready-made Docker Compose examples.
+* `nemvoAnalyticsTrack( name, label )` and `data-nemvo-analytics-event` / `data-nemvo-analytics-label` attributes for your own events. The names used up to 1.0.2 (`nvaTrack`, `data-nva-event`, `data-nva-label`) keep working.
+* Filters: `nemvo_analytics_should_track`, `nemvo_analytics_allowed_hosts`, `nemvo_analytics_spam_referrers`, `nemvo_analytics_dns_servers`, `nemvo_analytics_rate_limit`.
+* REST namespace `nemvo-analytics/v1`; the old `nemvo/v1` routes stay registered for pages cached before 1.0.3.
+* WP-CLI: `wp nemvo-analytics status | install | migrate | queue work | lookup | geoip-update | purge | report`.
+* Configuration through wp-config.php constants or environment variables (`NEMVO_ANALYTICS_DB_*`, `NEMVO_ANALYTICS_QUEUE_URL`, `NEMVO_ANALYTICS_CAP_*`, `_FILE` variants for Docker secrets). Passwords and keys saved on the settings page are stored encrypted (key from your WordPress salts, or `NEMVO_ANALYTICS_KEY`).
+  The settings page shows ready-made Docker Compose examples.
 
 Source code and issue tracker: [github.com/fpoller/nemvo-analytics](https://github.com/fpoller/nemvo-analytics).
 
@@ -90,7 +93,7 @@ Optional, for busy sites: a separate statistics database, the Valkey queue and C
 
 = Do I need a cookie banner? =
 
-Nemvo Analytics sets no cookies and stores nothing on the visitor's device, and it does not store IP addresses. Most EU data protection authorities consider such analytics exempt from consent, but check what applies to you. Add the suggested text to your privacy policy (Settings › Privacy › Policy guide).
+Nemvo Analytics sets no cookies, stores no identifier on the visitor's device (only an opt-out flag in local storage, for visitors who opt out) and does not store IP addresses. Most EU data protection authorities consider such analytics exempt from consent, but check what applies to you. Add the suggested text to your privacy policy (Settings › Privacy › Policy guide).
 
 = How does it identify companies? Is that allowed? =
 
@@ -102,7 +105,7 @@ Pageviews are sent by JavaScript, so cached pages are counted. But "delay JavaSc
 
 = Where is the data stored? =
 
-In your WordPress database (tables starting with your table prefix and `nemvo_`), or in a separate MySQL/MariaDB database if you set one up. Nothing leaves your server.
+In your WordPress database (tables starting with your table prefix and `nemvo_analytics_`), or in a separate MySQL/MariaDB database if you set one up. Visitor data is not sent anywhere else, with two optional exceptions you turn on yourself: reverse DNS lookups (the visitor's address goes to your server's DNS resolver) and a Cap server. See External services.
 
 = Does it slow my site down? =
 
@@ -118,12 +121,14 @@ Not in this version.
 
 == External services ==
 
-The plugin works without any external service. These are only contacted when you set them up:
+The plugin works without any external service, and contacts none until you set it up. In detail:
 
-* **DB-IP** (db-ip.com): when an administrator clicks a download button on the settings page or runs `wp nemvo-analytics geoip-update`, the free "IP to Country Lite", "IP to City Lite" or "IP to ASN Lite" database is downloaded from download.db-ip.com, once, and then used locally. With "Update the downloaded IP databases monthly" turned on, it is downloaded again once a month. No visitor data is sent. The databases are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); see the [DB-IP terms](https://db-ip.com/db/lite.php).
-* **Your DNS resolver**: with "Use reverse DNS to tell offices from homes" turned on, the reverse DNS name of a visiting IP address is looked up through the server's own resolver (from /etc/resolv.conf), once per visit, to tell office lines from home lines. Like any DNS query, the resolver sees the address being looked up.
-* **Your Cap server** (optional, self-hosted, [capjs.js.org](https://capjs.js.org)): with Cap turned on, WordPress forwards proof-of-work challenges between the visitor's browser and the Cap server you configured, including the visitor's IP address in an X-Forwarded-For header for Cap's rate limiting, and verifies the result with it.
-* **Your Valkey or Redis server** (optional): with the queue turned on, collected hits (without IP addresses) wait there until they are written to the database.
+* **DB-IP** (db-ip.com), IP geolocation and network databases. When an administrator clicks a download button on the settings page or runs `wp nemvo-analytics geoip-update`, the free "IP to Country Lite", "IP to City Lite" or "IP to ASN Lite" database is downloaded from download.db-ip.com and then used locally. With "Update the downloaded IP databases monthly" turned on (off by default), the daily maintenance task downloads them again once they are a month old. Only the download request itself is sent (your server's address and WordPress's user agent); no visitor data. The databases are licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) and credited where their data is shown. [Lite database license](https://db-ip.com/db/lite.php), [terms of service](https://db-ip.com/tos.php), [privacy policy](https://db-ip.com/privacy.php).
+* **Your DNS resolver** (reverse DNS). Off by default. With "Use reverse DNS to tell offices from homes on ISP networks" turned on, and a network database installed, the reverse DNS name of a new visit's IP address is looked up once per visit, only for addresses of internet providers, through the resolvers in the server's /etc/resolv.conf (or the `nemvo_analytics_dns_servers` filter). That resolver, which may be your hosting provider's or a public one, sees the address being looked up. The name is never stored.
+* **Your Cap server** (optional, self-hosted, [capjs.js.org](https://capjs.js.org), [source](https://github.com/tiagozip/cap)). With Cap turned on, a visitor's browser fetches a proof-of-work challenge and redeems the solution. By default WordPress relays these requests to the Cap server you configured, adding the visitor's IP address in an X-Forwarded-For header for Cap's rate limiting, and WordPress verifies each solution with the server (secret key and token). With a public Cap address set, browsers talk to that Cap server directly instead, which then sees their IP address and user agent. The Cap server may send instrumentation code that the widget runs in the browser. Cap is software you host yourself; its maintainers receive nothing. The widget's code mentions trycap.dev (Cap's website) and has fallback URLs on cdn.jsdelivr.net, which are never used: the plugin points the widget at the files bundled in `assets/vendor/cap/`.
+* **An external MySQL or MariaDB database** (optional). If you configure one, statistics (no IP addresses) are stored there instead of in the WordPress database.
+* **Your Valkey or Redis server** (optional). With the queue turned on, collected hits (without IP addresses) wait there until they are written to the database.
+* **Your own site** (Settings › Check tracking). When an administrator clicks the button, WordPress loads its own home page and sends a test hit to its own endpoint, with a desktop browser user agent so that the page looks like it does to visitors.
 
 == Third-party code ==
 
@@ -133,9 +138,12 @@ All bundled in `assets/vendor/` (see `assets/vendor/README.txt`), so browsers lo
 * chartjs-chart-geo 4.3.6, MIT, https://github.com/sgratzl/chartjs-chart-geo (includes parts of d3 and topojson-client, ISC)
 * chartjs-chart-matrix 3.1.0, MIT, https://github.com/kurkle/chartjs-chart-matrix
 * World map data from world-atlas 2.0.2 (ISC) and Natural Earth (public domain), simplified.
-* Cap widget 0.1.58 and Cap WASM 0.0.8, Apache-2.0, https://github.com/tiagozip/cap, and pako 2.1.0, MIT and Zlib, https://github.com/nodeca/pako
+* Cap widget 0.1.58 (`@cap.js/widget`, `cap.min.js`), Apache License 2.0. Readable source: [widget/src at commit 91b45ac](https://github.com/tiagozip/cap/tree/91b45ace6dc4ef57100e5f0f748efaae6417d70a/widget/src) of tiagozip/cap, the "widget@0.1.58" release.
+* Cap WASM solver 0.0.8 (`@cap.js/wasm`, `cap_wasm_bg.wasm`), Apache License 2.0. Rust source: [wasm/src/rust at commit 8ad83fb](https://github.com/tiagozip/cap/tree/8ad83fb50eaefb7f113ca1ec508ce242ed75033d/wasm/src/rust), the "wasm@0.0.8" release.
+* HashWX (`hashwx.wasm`, shipped in `@cap.js/wasm` 0.0.8), GNU LGPL 3.0 (with the GNU GPL 3.0 it builds on, both texts in `assets/vendor/cap/`). C source: [tevador/hashwx at commit 74b567a](https://github.com/tevador/hashwx/tree/74b567a31276a4c5d7cb232a5b7639467f49f961), compiled to WebAssembly by the Cap project.
+* pako 2.1.0 (`pako_inflate.min.js`), MIT and Zlib, https://github.com/nodeca/pako/tree/2.1.0
 
-The minified files are unmodified copies of the published packages. `assets/js/tracker.min.js` is generated from `assets/js/tracker.js` with terser.
+The minified and WASM files are unmodified copies of the published npm packages. `assets/js/tracker.min.js` is generated from `assets/js/tracker.js` with terser 5.51.2 (`tools/minify-tracker.sh` in the GitHub repository).
 
 == Screenshots ==
 
@@ -148,6 +156,21 @@ The minified files are unmodified copies of the published packages. `assets/js/t
 7. Settings with the setup checklist and Docker Compose instructions.
 
 == Changelog ==
+
+= 1.0.3 =
+* Changed: reverse DNS lookups are off by default on new sites. Sites updating from an earlier version keep their setting. Reverse DNS also only runs with a network database installed.
+* Changed: everything the plugin names is now prefixed with "nemvo_analytics" or "nemvo-analytics": the database tables (renamed automatically, in the WordPress database and in an external one), the REST namespace (`nemvo-analytics/v1`), script handles, JavaScript globals (`nemvoAnalyticsTrack`, `data-nemvo-analytics-event`), local storage keys and the cron schedule. The old REST routes, `nvaTrack`, `data-nva-*` attributes, `#nva-ignore` and the old opt-out flag keep working, so pages cached before the update still count.
+* Changed: an external database with the old default prefix `nemvo_` now uses `nemvo_analytics_`; its tables are renamed on the first connection. Other prefixes are left as they are.
+* Security: passwords and keys saved on the settings page (external database, Valkey, Cap) are stored encrypted and no longer loaded on every page.
+* Security: REST hardening. Reporting and admin routes are left out of the public REST index and answer 401/403 to anonymous requests before looking at any parameter; purging, migrating and creating tables also need the WordPress REST nonce. The public collection and Cap endpoints are throttled per anonymous visitor.
+* Security: CSV exports escape cells that a spreadsheet would run as a formula.
+* Fixed: Cap's "Test connection" reported success for a wrong site key or secret key. Site Health now also reports when Cap rejects the keys while verifying visits.
+* Fixed: hits with malformed fields no longer cause PHP warnings.
+* Changed: the tracker and the dashboard widget's styles are added through registered script and style handles; the tracker is still printed inline with the same optimizer opt-out attributes.
+* Changed: DB-IP is credited in the weekly email and the settings page lookup, the readme lists every external service, and the bundled Cap files come with their exact sources and full license texts (HashWX in `hashwx.wasm` is LGPL-3.0).
+* Changed: uninstalling also removes the "Check tracking" log and works on every site of a network.
+* Changed: the settings screen's texts are translatable in JavaScript too.
+* Changed: the demo traffic generator is no longer part of the plugin zip.
 
 = 1.0.2 =
 * Fixed: the setup checklist kept warning that visitor addresses were hidden behind a proxy after "Forwarded visitor addresses" was set to Automatic or Always. The warning now follows the current setting and clears itself once visitor addresses come through.
@@ -165,6 +188,9 @@ The minified files are unmodified copies of the published packages. `assets/js/t
 * First release.
 
 == Upgrade Notice ==
+
+= 1.0.3 =
+Renames the plugin's database tables and REST routes (automatically; old routes keep working), encrypts saved passwords and fixes the Cap connection test. Reverse DNS is now off by default on new sites.
 
 = 1.0.2 =
 Fixes a setup warning about proxies that stayed after the setting was changed.

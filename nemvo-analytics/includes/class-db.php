@@ -11,18 +11,29 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Statistics are stored in one of two places ("targets"):
- *  - local:    the WordPress database, tables {wp_prefix}nemvo_*  (default);
+ *  - local:    the WordPress database, tables {wp_prefix}nemvo_analytics_*
+ *              (default);
  *  - external: a separate MySQL/MariaDB database, configured with
  *              NEMVO_ANALYTICS_DB_* constants, environment variables or the
- *              settings page.
+ *              settings page; tables {prefix}*, prefix "nemvo_analytics_" by
+ *              default.
  * The active target is stored in STORAGE_OPTION and changed by Migration.
+ *
+ * Up to 1.0.2 the tables were called {wp_prefix}nemvo_* and the external
+ * default prefix was "nemvo_". install() renames such tables once, in one
+ * atomic RENAME TABLE, when the new ones don't exist yet. An external prefix
+ * of "nemvo_" (the old default, also when set explicitly) now means
+ * "nemvo_analytics_"; any other prefix is used as it is.
  */
 class DB {
 
-	const SCHEMA_VERSION = 1;
-	const SCHEMA_OPTION  = 'nemvo_analytics_schema';
-	const STORAGE_OPTION = 'nemvo_analytics_storage';
-	const TABLES         = array( 'sessions', 'pageviews', 'events' );
+	const SCHEMA_OPTION   = 'nemvo_analytics_schema';
+	const STORAGE_OPTION  = 'nemvo_analytics_storage';
+	const TABLES          = array( 'sessions', 'pageviews', 'events' );
+	const ALL_TABLES      = array( 'events', 'pageviews', 'sessions', 'meta' );
+	const LOCAL_PREFIX    = 'nemvo_analytics_';
+	const EXTERNAL_PREFIX = 'nemvo_analytics_';
+	const LEGACY_PREFIX   = 'nemvo_';
 
 	/**
 	 * Open connections per target (false after a failed attempt).
@@ -69,7 +80,9 @@ class DB {
 		}
 		$cfg['host']   = '' === $cfg['host'] ? 'localhost' : $cfg['host'];
 		$cfg['prefix'] = (string) preg_replace( '/[^A-Za-z0-9_]/', '', (string) $cfg['prefix'] );
-		$cfg['prefix'] = '' === $cfg['prefix'] ? 'nemvo_' : $cfg['prefix'];
+		// The default prefix, and the one of 1.0.0-1.0.2 whose tables install() renames.
+		$cfg['legacy'] = '' === $cfg['prefix'] || self::LEGACY_PREFIX === $cfg['prefix'] ? self::LEGACY_PREFIX : '';
+		$cfg['prefix'] = '' !== $cfg['legacy'] ? self::EXTERNAL_PREFIX : $cfg['prefix'];
 		return $cfg;
 	}
 
@@ -92,6 +105,16 @@ class DB {
 		}
 		self::$active = 'external' === $mode && ! $external ? 'local' : $mode;
 		return self::$active;
+	}
+
+	/**
+	 * Forget cached connections and the active target (uninstall on
+	 * multisite, tests).
+	 */
+	public static function reset() {
+		self::$active = null;
+		self::$conns  = array();
+		self::$errors = array();
 	}
 
 	/**
@@ -124,9 +147,25 @@ class DB {
 		$target = $target ? $target : self::active();
 		if ( 'external' === $target ) {
 			$cfg = self::external_config();
-			return $cfg ? $cfg['prefix'] : 'nemvo_';
+			return $cfg ? $cfg['prefix'] : self::EXTERNAL_PREFIX;
 		}
-		return $wpdb->prefix . 'nemvo_';
+		return $wpdb->prefix . self::LOCAL_PREFIX;
+	}
+
+	/**
+	 * Table name prefix the target used up to 1.0.2, or '' when its tables
+	 * were never renamed (a custom external prefix).
+	 *
+	 * @param string $target local|external.
+	 * @return string
+	 */
+	public static function legacy_prefix( $target ) {
+		global $wpdb;
+		if ( 'external' === $target ) {
+			$cfg = self::external_config();
+			return $cfg ? $cfg['legacy'] : '';
+		}
+		return $wpdb->prefix . self::LEGACY_PREFIX;
 	}
 
 	/**
@@ -206,7 +245,7 @@ class DB {
 		$target = $target ? $target : self::active();
 		$known  = get_option( self::SCHEMA_OPTION, array() );
 		$sig    = self::signature( $target );
-		return is_array( $known ) && isset( $known[ $sig ] ) && (int) $known[ $sig ] >= self::SCHEMA_VERSION;
+		return is_array( $known ) && isset( $known[ $sig ] ) && (int) $known[ $sig ] >= Install::DB_VERSION;
 	}
 
 	/**
@@ -219,7 +258,9 @@ class DB {
 	}
 
 	/**
-	 * Create the tables in a target.
+	 * Create or upgrade the tables in a target: rename the tables of 1.0.0-1.0.2
+	 * if there are any, then dbDelta. Holds a database lock meanwhile, so hits
+	 * arriving during an upgrade wait for it instead of failing.
 	 *
 	 * @param string|null $target Target (default: active).
 	 * @return bool
@@ -230,6 +271,111 @@ class DB {
 		if ( ! $db ) {
 			return false;
 		}
+		$lock   = 'nemvo_analytics_install';
+		$locked = (bool) $db->get_var( $db->prepare( 'SELECT GET_LOCK( %s, 15 )', $lock ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- a named lock, no table.
+		try {
+			if ( ! self::rename_legacy( $target ) ) {
+				return false;
+			}
+			$ok = self::create_tables( $target );
+		} finally {
+			if ( $locked ) {
+				$db->query( $db->prepare( 'SELECT RELEASE_LOCK( %s )', $lock ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- a named lock, no table.
+			}
+		}
+		if ( ! $ok ) {
+			return false;
+		}
+
+		$db->replace(
+			self::table( 'meta', $target ),
+			array(
+				'meta_key'   => 'schema_version', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- the plugin's own key-value table.
+				'meta_value' => (string) Install::DB_VERSION, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- the plugin's own key-value table.
+			)
+		);
+
+		$known                               = get_option( self::SCHEMA_OPTION, array() );
+		$known                               = is_array( $known ) ? $known : array();
+		$known[ self::signature( $target ) ] = Install::DB_VERSION;
+		update_option( self::SCHEMA_OPTION, $known, true );
+		return true;
+	}
+
+	/**
+	 * Whether a table exists in a target.
+	 *
+	 * @param \wpdb  $db    Connection.
+	 * @param string $table Table name.
+	 * @return bool
+	 */
+	private static function table_exists( $db, $table ) {
+		return $table === $db->get_var( $db->prepare( 'SHOW TABLES LIKE %s', $db->esc_like( $table ) ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery -- schema check.
+	}
+
+	/**
+	 * Whether 1.0.0-1.0.2 tables of this plugin are still under their old
+	 * names (their meta table carries our schema version).
+	 *
+	 * @param string $target local|external.
+	 * @return bool
+	 */
+	public static function has_legacy( $target ) {
+		$old = self::legacy_prefix( $target );
+		$db  = '' === $old ? null : self::conn( $target );
+		if ( ! $db || ! self::table_exists( $db, $old . 'meta' ) ) {
+			return false;
+		}
+		$suppress = $db->suppress_errors();
+		$version  = $db->get_var( "SELECT meta_value FROM `{$old}meta` WHERE meta_key = 'schema_version'" ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery -- the plugin's own old table.
+		$db->suppress_errors( $suppress );
+		return null !== $version;
+	}
+
+	/**
+	 * Rename the tables of 1.0.0-1.0.2 ({prefix}nemvo_*) to the current names,
+	 * in one atomic statement, when none of the new tables exists yet. Does
+	 * nothing when there are no old tables or the new ones exist already.
+	 *
+	 * @param string $target local|external.
+	 * @return bool False when the rename failed.
+	 */
+	public static function rename_legacy( $target ) {
+		$db  = self::conn( $target );
+		$old = self::legacy_prefix( $target );
+		if ( ! $db || ! self::has_legacy( $target ) ) {
+			return (bool) $db;
+		}
+		$pairs = array();
+		foreach ( self::ALL_TABLES as $name ) {
+			if ( self::table_exists( $db, self::table( $name, $target ) ) ) {
+				return true; // Already renamed, or created anew: leave both alone.
+			}
+			if ( self::table_exists( $db, $old . $name ) ) {
+				$pairs[] = '`' . $old . $name . '` TO `' . self::table( $name, $target ) . '`';
+			}
+		}
+		if ( ! $pairs ) {
+			return true;
+		}
+		if ( false === $db->query( 'RENAME TABLE ' . implode( ', ', $pairs ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- renaming the plugin's own tables on upgrade.
+			self::$errors[ $target ] = $db->last_error;
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Create or update the tables with dbDelta. dbDelta works on the global
+	 * $wpdb, so it is pointed at the external connection for the duration.
+	 *
+	 * @param string $target local|external.
+	 * @return bool
+	 */
+	private static function create_tables( $target ) {
+		global $wpdb;
+		$db = self::conn( $target );
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 
 		$opts = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
 		$s    = self::table( 'sessions', $target );
@@ -238,112 +384,107 @@ class DB {
 		$m    = self::table( 'meta', $target );
 
 		$sql = array(
-			"CREATE TABLE IF NOT EXISTS `$s` (
-				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-				visitor CHAR(16) NOT NULL,
-				started_at DATETIME NOT NULL,
-				last_seen DATETIME NOT NULL,
-				duration INT UNSIGNED NOT NULL DEFAULT 0,
-				pageviews SMALLINT UNSIGNED NOT NULL DEFAULT 0,
-				events SMALLINT UNSIGNED NOT NULL DEFAULT 0,
-				is_bounce TINYINT(1) NOT NULL DEFAULT 1,
-				entry_path VARCHAR(255) NOT NULL DEFAULT '',
-				exit_path VARCHAR(255) NOT NULL DEFAULT '',
-				exit_pv CHAR(16) NOT NULL DEFAULT '',
-				channel VARCHAR(32) NOT NULL DEFAULT '',
-				source VARCHAR(100) NOT NULL DEFAULT '',
-				referrer_host VARCHAR(191) NOT NULL DEFAULT '',
-				referrer_url VARCHAR(255) NOT NULL DEFAULT '',
-				utm_source VARCHAR(100) NOT NULL DEFAULT '',
-				utm_medium VARCHAR(100) NOT NULL DEFAULT '',
-				utm_campaign VARCHAR(150) NOT NULL DEFAULT '',
-				utm_term VARCHAR(150) NOT NULL DEFAULT '',
-				utm_content VARCHAR(150) NOT NULL DEFAULT '',
-				country CHAR(2) NOT NULL DEFAULT '',
-				region VARCHAR(100) NOT NULL DEFAULT '',
-				city VARCHAR(100) NOT NULL DEFAULT '',
-				language VARCHAR(16) NOT NULL DEFAULT '',
-				device VARCHAR(16) NOT NULL DEFAULT '',
-				os VARCHAR(32) NOT NULL DEFAULT '',
-				browser VARCHAR(40) NOT NULL DEFAULT '',
-				screen VARCHAR(8) NOT NULL DEFAULT '',
-				asn INT UNSIGNED NOT NULL DEFAULT 0,
-				org VARCHAR(100) NOT NULL DEFAULT '',
-				network VARCHAR(16) NOT NULL DEFAULT '',
-				company VARCHAR(100) NOT NULL DEFAULT '',
-				bot_score TINYINT UNSIGNED NOT NULL DEFAULT 0,
-				bot_flags INT UNSIGNED NOT NULL DEFAULT 0,
+			"CREATE TABLE $s (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				visitor char(16) NOT NULL,
+				started_at datetime NOT NULL,
+				last_seen datetime NOT NULL,
+				duration int(10) unsigned NOT NULL DEFAULT 0,
+				pageviews smallint(5) unsigned NOT NULL DEFAULT 0,
+				events smallint(5) unsigned NOT NULL DEFAULT 0,
+				is_bounce tinyint(1) NOT NULL DEFAULT 1,
+				entry_path varchar(255) NOT NULL DEFAULT '',
+				exit_path varchar(255) NOT NULL DEFAULT '',
+				exit_pv char(16) NOT NULL DEFAULT '',
+				channel varchar(32) NOT NULL DEFAULT '',
+				source varchar(100) NOT NULL DEFAULT '',
+				referrer_host varchar(191) NOT NULL DEFAULT '',
+				referrer_url varchar(255) NOT NULL DEFAULT '',
+				utm_source varchar(100) NOT NULL DEFAULT '',
+				utm_medium varchar(100) NOT NULL DEFAULT '',
+				utm_campaign varchar(150) NOT NULL DEFAULT '',
+				utm_term varchar(150) NOT NULL DEFAULT '',
+				utm_content varchar(150) NOT NULL DEFAULT '',
+				country char(2) NOT NULL DEFAULT '',
+				region varchar(100) NOT NULL DEFAULT '',
+				city varchar(100) NOT NULL DEFAULT '',
+				language varchar(16) NOT NULL DEFAULT '',
+				device varchar(16) NOT NULL DEFAULT '',
+				os varchar(32) NOT NULL DEFAULT '',
+				browser varchar(40) NOT NULL DEFAULT '',
+				screen varchar(8) NOT NULL DEFAULT '',
+				asn int(10) unsigned NOT NULL DEFAULT 0,
+				org varchar(100) NOT NULL DEFAULT '',
+				network varchar(16) NOT NULL DEFAULT '',
+				company varchar(100) NOT NULL DEFAULT '',
+				bot_score tinyint(3) unsigned NOT NULL DEFAULT 0,
+				bot_flags int(10) unsigned NOT NULL DEFAULT 0,
 				PRIMARY KEY  (id),
-				KEY visitor_seen (visitor, last_seen),
+				KEY visitor_seen (visitor,last_seen),
 				KEY started_at (started_at),
 				KEY last_seen (last_seen)
-			) $opts",
-			"CREATE TABLE IF NOT EXISTS `$p` (
-				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-				session_id BIGINT UNSIGNED NOT NULL,
-				pv CHAR(16) NOT NULL,
-				visitor CHAR(16) NOT NULL,
-				created_at DATETIME NOT NULL,
-				path VARCHAR(255) NOT NULL DEFAULT '',
-				title VARCHAR(255) NOT NULL DEFAULT '',
-				post_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
-				content_type VARCHAR(32) NOT NULL DEFAULT '',
-				prev_path VARCHAR(255) NOT NULL DEFAULT '',
-				engaged_ms INT UNSIGNED NOT NULL DEFAULT 0,
-				scroll TINYINT UNSIGNED NOT NULL DEFAULT 0,
-				is_entry TINYINT(1) NOT NULL DEFAULT 0,
-				is_exit TINYINT(1) NOT NULL DEFAULT 1,
-				status SMALLINT UNSIGNED NOT NULL DEFAULT 200,
+			) $opts;",
+			"CREATE TABLE $p (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				session_id bigint(20) unsigned NOT NULL,
+				pv char(16) NOT NULL,
+				visitor char(16) NOT NULL,
+				created_at datetime NOT NULL,
+				path varchar(255) NOT NULL DEFAULT '',
+				title varchar(255) NOT NULL DEFAULT '',
+				post_id bigint(20) unsigned NOT NULL DEFAULT 0,
+				content_type varchar(32) NOT NULL DEFAULT '',
+				prev_path varchar(255) NOT NULL DEFAULT '',
+				engaged_ms int(10) unsigned NOT NULL DEFAULT 0,
+				scroll tinyint(3) unsigned NOT NULL DEFAULT 0,
+				is_entry tinyint(1) NOT NULL DEFAULT 0,
+				is_exit tinyint(1) NOT NULL DEFAULT 1,
+				status smallint(5) unsigned NOT NULL DEFAULT 200,
 				PRIMARY KEY  (id),
 				UNIQUE KEY pv (pv),
 				KEY session_id (session_id),
 				KEY created_at (created_at),
-				KEY path_created (path(191), created_at),
+				KEY path_created (path(191),created_at),
 				KEY prev_path (prev_path(191)),
-				KEY post_created (post_id, created_at)
-			) $opts",
-			"CREATE TABLE IF NOT EXISTS `$e` (
-				id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-				session_id BIGINT UNSIGNED NOT NULL,
-				pv CHAR(16) NOT NULL DEFAULT '',
-				visitor CHAR(16) NOT NULL,
-				created_at DATETIME NOT NULL,
-				name VARCHAR(64) NOT NULL,
-				label VARCHAR(255) NOT NULL DEFAULT '',
-				meta VARCHAR(255) NOT NULL DEFAULT '',
-				path VARCHAR(255) NOT NULL DEFAULT '',
+				KEY post_created (post_id,created_at)
+			) $opts;",
+			"CREATE TABLE $e (
+				id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+				session_id bigint(20) unsigned NOT NULL,
+				pv char(16) NOT NULL DEFAULT '',
+				visitor char(16) NOT NULL,
+				created_at datetime NOT NULL,
+				name varchar(64) NOT NULL,
+				label varchar(255) NOT NULL DEFAULT '',
+				meta varchar(255) NOT NULL DEFAULT '',
+				path varchar(255) NOT NULL DEFAULT '',
 				PRIMARY KEY  (id),
 				KEY session_id (session_id),
-				KEY name_created (name, created_at),
+				KEY name_created (name,created_at),
 				KEY created_at (created_at)
-			) $opts",
-			"CREATE TABLE IF NOT EXISTS `$m` (
-				meta_key VARCHAR(64) NOT NULL,
-				meta_value LONGTEXT NOT NULL,
+			) $opts;",
+			"CREATE TABLE $m (
+				meta_key varchar(64) NOT NULL,
+				meta_value longtext NOT NULL,
 				PRIMARY KEY  (meta_key)
-			) $opts",
+			) $opts;",
 		);
 
-		foreach ( $sql as $statement ) {
-			if ( false === $db->query( $statement ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery -- the plugin's own tables.
-				self::$errors[ $target ] = $db->last_error;
-				return false;
-			}
+		$global = $wpdb;
+		$wpdb   = $db; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- dbDelta() only works on the global connection; restored below.
+		try {
+			$suppress       = $db->suppress_errors();
+			$db->last_error = '';
+			dbDelta( $sql );
+			$db->suppress_errors( $suppress );
+			$ok = self::table_exists( $db, $s ) && self::table_exists( $db, $p ) && self::table_exists( $db, $e ) && self::table_exists( $db, $m );
+		} finally {
+			$wpdb = $global; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited -- restoring the WordPress connection.
 		}
-
-		$db->replace(
-			$m,
-			array(
-				'meta_key'   => 'schema_version', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
-				'meta_value' => (string) self::SCHEMA_VERSION, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-			)
-		);
-
-		$known                             = get_option( self::SCHEMA_OPTION, array() );
-		$known                             = is_array( $known ) ? $known : array();
-		$known[ self::signature( $target ) ] = self::SCHEMA_VERSION;
-		update_option( self::SCHEMA_OPTION, $known, true );
-		return true;
+		if ( ! $ok ) {
+			self::$errors[ $target ] = '' !== $db->last_error ? $db->last_error : __( 'Could not create the statistics tables.', 'nemvo-analytics' );
+		}
+		return $ok;
 	}
 
 	/**
@@ -383,21 +524,21 @@ class DB {
 		$target = $target ? $target : self::active();
 		$cfg    = 'external' === $target ? self::external_config() : null;
 		$status = array(
-			'target'    => $target,
-			'active'    => self::active() === $target,
-			'source'    => $cfg ? $cfg['source'] : ( 'local' === $target ? 'wordpress' : '' ),
-			'host'      => $cfg ? $cfg['host'] : DB_HOST,
-			'name'      => $cfg ? $cfg['name'] : DB_NAME,
-			'user'      => $cfg ? $cfg['user'] : DB_USER,
-			'prefix'    => self::prefix( $target ),
+			'target'     => $target,
+			'active'     => self::active() === $target,
+			'source'     => $cfg ? $cfg['source'] : ( 'local' === $target ? 'wordpress' : '' ),
+			'host'       => $cfg ? $cfg['host'] : DB_HOST,
+			'name'       => $cfg ? $cfg['name'] : DB_NAME,
+			'user'       => $cfg ? $cfg['user'] : DB_USER,
+			'prefix'     => self::prefix( $target ),
 			'configured' => 'local' === $target || null !== $cfg,
-			'connected' => false,
-			'error'     => '',
-			'server'    => '',
-			'schema'    => self::schema_ok( $target ),
-			'tables'    => array(),
-			'bytes'     => 0,
-			'oldest'    => null,
+			'connected'  => false,
+			'error'      => '',
+			'server'     => '',
+			'schema'     => self::schema_ok( $target ),
+			'tables'     => array(),
+			'bytes'      => 0,
+			'oldest'     => null,
 		);
 		if ( ! $status['configured'] ) {
 			return $status;
@@ -505,7 +646,8 @@ class DB {
 	}
 
 	/**
-	 * Drop the tables of a target (uninstall).
+	 * Drop the tables of a target (uninstall), including tables of 1.0.0-1.0.2
+	 * that were never renamed.
 	 *
 	 * @param string $target Target.
 	 */
@@ -514,8 +656,14 @@ class DB {
 		if ( ! $db ) {
 			return;
 		}
-		foreach ( array( 'events', 'pageviews', 'sessions', 'meta' ) as $t ) {
-			$db->query( 'DROP TABLE IF EXISTS `' . self::table( $t, $target ) . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery
+		$prefixes = array( self::prefix( $target ) );
+		if ( self::has_legacy( $target ) ) {
+			$prefixes[] = self::legacy_prefix( $target );
+		}
+		foreach ( $prefixes as $prefix ) {
+			foreach ( self::ALL_TABLES as $t ) {
+				$db->query( 'DROP TABLE IF EXISTS `' . $prefix . $t . '`' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery, WordPress.DB.DirectDatabaseQuery.SchemaChange -- the plugin's own tables, on uninstall.
+			}
 		}
 	}
 }

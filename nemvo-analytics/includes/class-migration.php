@@ -117,7 +117,7 @@ class Migration {
 			$state['copied'][ $table ] += count( $rows );
 			$state['last']              = $rows ? (int) end( $rows )['id'] : $state['last'];
 			if ( count( $rows ) < self::BATCH ) {
-				$state['table']++;
+				++$state['table'];
 				$state['last'] = 0;
 				if ( $state['table'] >= count( DB::TABLES ) ) {
 					$state['phase'] = 'delta';
@@ -142,8 +142,9 @@ class Migration {
 						/* translators: %s: error message */
 						return new \WP_Error( 'nemvo_migrate_write', sprintf( __( 'Writing to the target database failed: %s', 'nemvo-analytics' ), $dst->last_error ) );
 					}
-					$last = $rows ? (int) end( $rows )['id'] : $last;
-				} while ( count( $rows ) === self::BATCH );
+					$last    = $rows ? (int) end( $rows )['id'] : $last;
+					$fetched = count( $rows );
+				} while ( self::BATCH === $fetched );
 			}
 			DB::set_active( $state['to'] );
 			$state['phase']    = 'done';

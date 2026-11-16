@@ -11,9 +11,11 @@
  * @package NemvoAnalytics
  */
 
+use NemvoAnalytics\Admin;
 use NemvoAnalytics\Bot;
 use NemvoAnalytics\Cap;
 use NemvoAnalytics\Collector;
+use NemvoAnalytics\Crypto;
 use NemvoAnalytics\DB;
 use NemvoAnalytics\Health;
 use NemvoAnalytics\Migration;
@@ -37,10 +39,10 @@ function nva_ok( $cond, $msg ) {
 }
 
 /** Send a hit to the collector like a browser would. */
-function nva_hit( array $payload, $ip = '81.236.10.20', $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', array $headers = array() ) {
+function nva_hit( array $payload, $ip = '81.236.10.20', $ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', array $headers = array(), $ns = Collector::NS ) {
 	$_SERVER['REMOTE_ADDR']     = $ip;
 	$_SERVER['HTTP_USER_AGENT'] = $ua;
-	$request                    = new WP_REST_Request( 'POST', '/nemvo/v1/e' );
+	$request                    = new WP_REST_Request( 'POST', '/' . $ns . '/e' );
 	$request->set_body( wp_json_encode( $payload ) );
 	$headers += array(
 		'accept-language' => 'sv-SE,sv;q=0.9,en;q=0.8',
@@ -200,6 +202,8 @@ nva_ok( $s && (int) $s['bot_flags'] & Bot::RATE, 'too many pages too fast flagge
 WP_CLI::log( '== Queue' );
 $services                  = Settings::services();
 $services['queue_enabled'] = 1;
+// Own key prefix, so the dev container's worker leaves the test's hits alone.
+$services['queue_prefix'] = 'nvatest:';
 update_option( Settings::SERVICES_OPTION, $services );
 Queue::reset();
 $test = Queue::test( Queue::from_settings( $services ) );
@@ -226,7 +230,7 @@ for ( $i = 0; $i < 300; $i++ ) {
 }
 $t0 = microtime( true );
 $n  = Queue::work( 10 );
-nva_ok( 300 === $n, sprintf( '300 queued pageviews from 50 visitors written in %.0f ms', ( microtime( true ) - $t0 ) * 1000 ) );
+nva_ok( 300 === $n, sprintf( '300 queued pageviews from 50 visitors written in %.0f ms (%d)', ( microtime( true ) - $t0 ) * 1000, $n ) );
 $visits = (int) $wpdb->get_var( 'SELECT COUNT(DISTINCT session_id) FROM `' . DB::table( 'pageviews' ) . '` WHERE pv IN (\'' . implode( "','", $batch_pvs ) . '\')' ); // phpcs:ignore
 nva_ok( 50 === $visits, "grouped into 50 visits ($visits)" );
 $services['queue_enabled'] = 0;
@@ -263,7 +267,7 @@ nva_ok( Migration::purge_inactive() && 0 === (int) DB::counts( 'external', true 
 WP_CLI::log( '== Reports' );
 wp_set_current_user( 1 );
 $today = current_datetime()->format( 'Y-m-d' );
-$batch = new WP_REST_Request( 'POST', '/nemvo/v1/stats/batch' );
+$batch = new WP_REST_Request( 'POST', '/' . Collector::NS . '/stats/batch' );
 $reqs  = array();
 foreach ( array( 'human', 'bot', 'all' ) as $traffic ) {
 	$reqs[] = array( 'route' => 'overview', 'params' => array( 'from' => $today, 'to' => $today, 'traffic' => $traffic, 'compare' => 'previous' ) );
@@ -294,8 +298,7 @@ $bot_report = $out[ count( $reqs ) - 4 ]['data'];
 nva_ok( $bot_report['bots'] === $bots && count( $bot_report['reasons'] ) >= 4, 'bot summary lists ' . count( $bot_report['reasons'] ) . ' reasons' );
 nva_ok( 1 === $out[ count( $reqs ) - 1 ]['data']['current']['visits'], 'filter by bot signal (crawler user agent) finds the crawler' );
 $sessions = $out[ count( $reqs ) - 5 ]['data'];
-$detail   = rest_do_request( new WP_REST_Request( 'GET', '/nemvo/v1/stats/session' ) );
-$req      = new WP_REST_Request( 'GET', '/nemvo/v1/stats/session' );
+$req      = new WP_REST_Request( 'GET', '/' . Collector::NS . '/stats/session' );
 $req->set_param( 'id', $sessions['rows'][0]['id'] );
 $detail = rest_do_request( $req )->get_data();
 nva_ok( ! empty( $detail['pages'] ) && isset( $detail['signals'] ), 'visit detail with pages and signals' );
@@ -311,13 +314,99 @@ wp_set_current_user( 0 );
 $pvc  = nva_id();
 $resp = nva_hit( nva_pv( $pvc ), '81.236.12.1' );
 nva_ok( 'cap' === ( $resp->get_data()['v'] ?? '' ), 'with Cap on, a new visit is asked to solve Cap' );
-$relay = rest_do_request( new WP_REST_Request( 'POST', '/nemvo/v1/cap/challenge' ) );
-$cdata = $relay->get_data();
-nva_ok( 200 === $relay->get_status() && ( isset( $cdata['challenge'] ) || isset( $cdata['token'] ) ), 'WordPress relays a Cap challenge (' . implode( ',', array_keys( (array) $cdata ) ) . ')' );
+foreach ( Collector::NAMESPACES as $ns ) {
+	$relay = rest_do_request( new WP_REST_Request( 'POST', '/' . $ns . '/cap/challenge' ) );
+	$cdata = $relay->get_data();
+	nva_ok( 200 === $relay->get_status() && ( isset( $cdata['challenge'] ) || isset( $cdata['token'] ) ), "WordPress relays a Cap challenge under $ns (" . implode( ',', array_keys( (array) $cdata ) ) . ')' );
+}
+$wrong               = $services;
+$wrong['cap_secret'] = 'sk-wrong-secret';
+nva_ok( ! Cap::test( $wrong )['ok'], 'the connection test rejects a wrong secret key: ' . Cap::test( $wrong )['message'] );
+$wrong                 = $services;
+$wrong['cap_site_key'] = 'aaaaaaaaaa';
+nva_ok( ! Cap::test( $wrong )['ok'], 'the connection test rejects a wrong site key: ' . Cap::test( $wrong )['message'] );
+$real                  = $services['cap_secret'];
+$services['cap_secret'] = 'sk-wrong-secret';
+update_option( Settings::SERVICES_OPTION, $services );
+Cap::reset();
+Cap::verify( $services['cap_site_key'] . ':x:0' );
+nva_ok( Cap::rejected_since() > 0 && (bool) array_filter( Health::checks(), static function ( $c ) { return 'critical' === $c[0] && false !== strpos( $c[1], 'Cap rejects' ); } ), 'a secret Cap rejects while verifying shows in Site Health' );
+$services['cap_secret'] = $real;
+update_option( Settings::SERVICES_OPTION, $services );
+Cap::reset();
+Cap::verify( $services['cap_site_key'] . ':x:0' );
+nva_ok( 0 === Cap::rejected_since(), 'the warning clears once Cap accepts the keys again' );
 nva_ok( ! Cap::verify( 'not-a-real-token' ), 'an invalid Cap token is rejected' );
 $services['cap_enabled'] = 0;
 update_option( Settings::SERVICES_OPTION, $services );
 Cap::reset();
+
+WP_CLI::log( '== 1.0.3: aliases, throttle, hardening' );
+wp_set_current_user( 0 );
+foreach ( Collector::NAMESPACES as $ns ) {
+	$pva  = nva_id();
+	$resp = nva_hit( nva_pv( $pva ), '81.236.13.' . strlen( $ns ), 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36', array(), $ns );
+	nva_ok( 200 === $resp->get_status() && nva_session( $pva ), "hits are accepted under $ns" );
+}
+$pvx  = nva_id();
+$resp = nva_hit( array_merge( nva_pv( $pvx ), array( 'ti' => array( 'x' ), 'l' => array( 1 ), 'tz' => array(), 'c' => array( 'type' => array( 'a' ), 'sq' => array() ) ) ), '81.236.14.1' );
+nva_ok( 200 === $resp->get_status() && nva_session( $pvx ), 'array fields in a hit are ignored without warnings' );
+$limit = static function () {
+	return 3;
+};
+add_filter( 'nemvo_analytics_rate_limit', $limit );
+$pvt = nva_id();
+$ipt = '81.236.15.' . wp_rand( 1, 250 );
+nva_hit( nva_pv( $pvt ), $ipt );
+for ( $i = 0; $i < 4; $i++ ) {
+	nva_hit( array( 't' => 'ev', 'id' => $pvt, 'n' => 'Throttle ' . $i ), $ipt );
+}
+remove_filter( 'nemvo_analytics_rate_limit', $limit );
+$s = nva_session( $pvt );
+nva_ok( $s && 2 === (int) $s['events'], 'a visitor over the rate limit is ignored for the rest of the minute (' . ( $s['events'] ?? '?' ) . ' of 4 events kept)' );
+$routes = rest_get_server()->get_routes();
+$hidden = true;
+foreach ( Collector::NAMESPACES as $ns ) {
+	foreach ( array( '/stats/batch', '/stats/overview', '/admin/purge', '/admin/migrate', '/e' ) as $route ) {
+		if ( empty( $routes[ '/' . $ns . $route ] ) ) {
+			$hidden = false;
+		}
+	}
+	$hidden = $hidden && false === $routes[ '/' . $ns . '/admin/purge' ][0]['show_in_index'] && false !== ( $routes[ '/' . $ns . '/e' ][0]['show_in_index'] ?? true );
+}
+nva_ok( $hidden, 'admin and report routes exist under both namespaces and are left out of the REST index' );
+foreach ( array( '/admin/purge', '/stats/overview', '/admin/db-test' ) as $route ) {
+	$req = new WP_REST_Request( 'admin/purge' === $route ? 'POST' : ( 0 === strpos( $route, '/stats' ) ? 'GET' : 'POST' ), '/' . Collector::LEGACY_NS . $route );
+	$req->set_param( 'all', 'not-a-boolean' );
+	$req->set_param( 'from', array( 'x' ) );
+	$code = rest_do_request( $req )->get_status();
+	nva_ok( 401 === $code, "anonymous $route answers 401 even with bad parameters ($code)" );
+}
+wp_set_current_user( 1 );
+$req = new WP_REST_Request( 'POST', '/' . Collector::NS . '/admin/purge' );
+$req->set_param( 'all', true );
+nva_ok( 403 === rest_do_request( $req )->get_status(), 'purging needs the REST nonce even for an administrator' );
+wp_set_current_user( 0 );
+nva_ok( "'=SUM(A1)" === Admin::csv_cell( '=SUM(A1)' ) && "'-x" === Admin::csv_cell( '-x' ) && '42' === Admin::csv_cell( 42 ) && 'Acme' === Admin::csv_cell( 'Acme' ), 'CSV cells that start a formula are escaped' );
+$box = Crypto::encrypt( 'secret value' );
+nva_ok( 0 === strpos( $box, Crypto::PREFIX ) && 'secret value' === Crypto::decrypt( $box ) && 'plain' === Crypto::decrypt( 'plain' ), 'secrets are encrypted, and plain values from before 1.0.3 still read' );
+$sv = Settings::sanitize_services( array_merge( Settings::services(), array( 'queue_password' => 'pw' ) ) );
+nva_ok( Crypto::is_encrypted( $sv['queue_password'] ) && Crypto::is_encrypted( $sv['cap_secret'] ), 'the settings page stores the Valkey password and Cap secret encrypted' );
+
+WP_CLI::log( '== 1.0.3: tables of 1.0.0-1.0.2 are renamed' );
+$counts_before = DB::counts( 'local', true );
+$old           = DB::legacy_prefix( 'local' );
+$pairs         = array();
+foreach ( DB::ALL_TABLES as $name ) {
+	$pairs[] = '`' . DB::table( $name, 'local' ) . '` TO `' . $old . $name . '`';
+}
+$wpdb->query( 'RENAME TABLE ' . implode( ', ', $pairs ) );
+update_option( DB::SCHEMA_OPTION, array() );
+nva_ok( DB::has_legacy( 'local' ) && ! DB::schema_ok( 'local' ), 'old tables found, schema marked as outdated' );
+nva_ok( DB::maybe_install(), 'the first use renames and updates them' );
+nva_ok( ! DB::has_legacy( 'local' ) && DB::counts( 'local', true ) === $counts_before, 'same rows under the new names: ' . wp_json_encode( $counts_before ) );
+nva_ok( DB::install( 'local' ) && DB::counts( 'local', true ) === $counts_before, 'running it again changes nothing' );
+nva_ok( 'nemvo_analytics_' === DB::prefix( 'external' ) || 0 !== strpos( DB::prefix( 'external' ), 'nemvo_' ), 'external default prefix is nemvo_analytics_ (' . DB::prefix( 'external' ) . ')' );
 
 WP_CLI::log( '== Health' );
 $checks = Health::checks();

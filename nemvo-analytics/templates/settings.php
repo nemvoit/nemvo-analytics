@@ -45,7 +45,7 @@ $sources = array(
 );
 
 // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- display only.
-$report_notice = isset( $_GET['nva_report'] ) ? sanitize_key( $_GET['nva_report'] ) : '';
+$report_notice = isset( $_GET['nemvo_analytics_report'] ) ? sanitize_key( $_GET['nemvo_analytics_report'] ) : '';
 
 $checkbox = static function ( $key, $label, $help = '', $option = null, $values = null ) use ( $settings, $opt ) {
 	$option = $option ? $option : $opt;
@@ -123,6 +123,7 @@ $field = static function ( $option, $key, $label, $value, $args = array() ) {
 	);
 };
 
+// phpcs:disable WordPress.WP.CapitalPDangit -- Docker Compose service, anchor and image names are lowercase "wordpress".
 $compose_db = <<<'YAML'
 services:
   wordpress:
@@ -167,8 +168,8 @@ define( 'NEMVO_ANALYTICS_DB_HOST', 'db.example.com:3306' );
 define( 'NEMVO_ANALYTICS_DB_NAME', 'analytics' );
 define( 'NEMVO_ANALYTICS_DB_USER', 'analytics' );
 define( 'NEMVO_ANALYTICS_DB_PASSWORD', 'a-long-random-password' );
-// Optional, default "nemvo_":
-// define( 'NEMVO_ANALYTICS_DB_PREFIX', 'nemvo_' );
+// Optional, default "nemvo_analytics_":
+// define( 'NEMVO_ANALYTICS_DB_PREFIX', 'nemvo_analytics_' );
 PHP;
 
 $sql = <<<'SQL'
@@ -249,6 +250,8 @@ services:
       NEMVO_ANALYTICS_CAP_SECRET_FILE: /run/secrets/cap_secret
 YAML;
 
+// phpcs:enable WordPress.WP.CapitalPDangit
+
 $cli = <<<'SH'
 wp nemvo-analytics status                     # storage, queue, Cap, IP databases, warnings
 wp nemvo-analytics install                    # create or repair tables
@@ -257,20 +260,20 @@ wp nemvo-analytics queue work --loop          # the queue worker
 wp nemvo-analytics lookup 203.0.113.7         # what would be recorded for an IP
 wp nemvo-analytics geoip-update --edition=asn # country | city | asn
 wp nemvo-analytics purge --before=2025-01-01
-wp nemvo-analytics seed --days=90             # demo traffic, for test sites only
+wp nemvo-analytics seed --days=90             # demo traffic (development copy only)
 wp nemvo-analytics report --to=you@example.com
 SH;
 
 $js_api = <<<'HTML'
 <!-- Any element: a click records the event -->
-<a href="/book-a-meeting/" data-nva-event="CTA click" data-nva-label="Hero">Book a meeting</a>
+<a href="/book-a-meeting/" data-nemvo-analytics-event="CTA click" data-nemvo-analytics-label="Hero">Book a meeting</a>
 
 <!-- Forms are recorded automatically; name them for nicer reports -->
-<form data-nva-label="Newsletter"> ... </form>
+<form data-nemvo-analytics-label="Newsletter"> ... </form>
 
 <script>
   // From your own code:
-  window.nvaTrack && nvaTrack('Booked a call', 'Pricing page');
+  window.nemvoAnalyticsTrack && nemvoAnalyticsTrack('Booked a call', 'Pricing page');
 </script>
 
 <!-- On your privacy policy page: let visitors opt out in their browser -->
@@ -402,8 +405,8 @@ $where = static function ( $status ) use ( $sources ) {
 				<?php $role_boxes( 'exclude_roles' ); ?>
 				<p class="nva-muted">
 					<?php
-					/* translators: 1: #nva-ignore, 2: #nva-track */
-					printf( esc_html__( 'To exclude your own browser without logging in, open any page of the site with %1$s at the end of the address. %2$s undoes it.', 'nemvo-analytics' ), '<code>#nva-ignore</code>', '<code>#nva-track</code>' );
+					/* translators: 1: #nemvo-analytics-ignore, 2: #nemvo-analytics-track */
+					printf( esc_html__( 'To exclude your own browser without logging in, open any page of the site with %1$s at the end of the address. %2$s undoes it. This stores one flag in the browser\'s local storage.', 'nemvo-analytics' ), '<code>#nemvo-analytics-ignore</code>', '<code>#nemvo-analytics-track</code>' );
 					?>
 				</p>
 
@@ -426,7 +429,7 @@ $where = static function ( $status ) use ( $sources ) {
 				<div class="nva-fields">
 					<label><span><?php esc_html_e( 'Download file extensions', 'nemvo-analytics' ); ?></span><input type="text" class="large-text" name="<?php echo esc_attr( $opt ); ?>[download_extensions]" value="<?php echo esc_attr( $settings['download_extensions'] ); ?>"></label>
 				</div>
-				<p class="nva-note"><?php esc_html_e( 'Made for sites without page caching or a CDN in front. If you use a caching or optimization plugin, exclude the script with the id "nva-tracker" from "delay JavaScript", combine and minify features; the tracker already carries the usual opt-out attributes for WP Rocket, LiteSpeed, Autoptimize and Cloudflare Rocket Loader.', 'nemvo-analytics' ); ?></p>
+				<p class="nva-note"><?php esc_html_e( 'Made for sites without page caching or a CDN in front. If you use a caching or optimization plugin, exclude the script with the id "nemvo-analytics-tracker-js-after" (or containing "nemvoAnalyticsConfig") from "delay JavaScript", combine and minify features; the tracker already carries the usual opt-out attributes for WP Rocket, LiteSpeed, Autoptimize and Cloudflare Rocket Loader.', 'nemvo-analytics' ); ?></p>
 			</section>
 
 			<section id="goals" class="nva-card nva-section">
@@ -519,7 +522,7 @@ $where = static function ( $status ) use ( $sources ) {
 				</div>
 				<div class="nva-checks">
 					<?php $checkbox( 'network_lookup', __( 'Identify networks and companies', 'nemvo-analytics' ) ); ?>
-					<?php $checkbox( 'rdns_lookup', __( 'Use reverse DNS to tell offices from homes on ISP networks', 'nemvo-analytics' ), __( 'One DNS lookup per visit, only for ISP addresses, limited to a fraction of a second.', 'nemvo-analytics' ) ); ?>
+					<?php $checkbox( 'rdns_lookup', __( 'Use reverse DNS to tell offices from homes on ISP networks', 'nemvo-analytics' ), __( 'Off by default. One DNS lookup per visit, only for ISP addresses (needs the network database), limited to a fraction of a second. It goes to the resolver in the server\'s /etc/resolv.conf, which may be your host\'s or a public one: that resolver sees the visitor\'s address.', 'nemvo-analytics' ) ); ?>
 				</div>
 				<div class="nva-fields nva-fields--2">
 					<label><span><?php esc_html_e( 'Your own ASN .mmdb database (optional)', 'nemvo-analytics' ); ?></span><input type="text" name="<?php echo esc_attr( $opt ); ?>[asn_mmdb_path]" value="<?php echo esc_attr( $settings['asn_mmdb_path'] ); ?>" placeholder="/var/lib/GeoIP/GeoLite2-ASN.mmdb"><small><?php esc_html_e( 'For example MaxMind GeoLite2 ASN, kept fresh by geoipupdate.', 'nemvo-analytics' ); ?></small></label>
@@ -622,9 +625,32 @@ $where = static function ( $status ) use ( $sources ) {
 					<div class="nva-checks"><?php $checkbox( 'cap_enabled', __( 'Use Cap', 'nemvo-analytics' ), '', $svc_opt, $services ); ?></div>
 					<div class="nva-fields nva-fields--2" data-group="cap">
 						<?php $field( $svc_opt, 'cap_url', __( 'Cap server, as WordPress reaches it', 'nemvo-analytics' ), $services['cap_url'], array( 'placeholder' => 'http://cap:3000' ) ); ?>
-						<?php $field( $svc_opt, 'cap_public_url', __( 'Public Cap address (optional)', 'nemvo-analytics' ), $services['cap_public_url'], array( 'placeholder' => 'https://cap.example.com', 'help' => __( 'Only if browsers should talk to Cap directly instead of through WordPress.', 'nemvo-analytics' ) ) ); ?>
+						<?php
+						$field(
+							$svc_opt,
+							'cap_public_url',
+							__( 'Public Cap address (optional)', 'nemvo-analytics' ),
+							$services['cap_public_url'],
+							array(
+								'placeholder' => 'https://cap.example.com',
+								'help'        => __( 'Only if browsers should talk to Cap directly instead of through WordPress.', 'nemvo-analytics' ),
+							)
+						);
+						?>
 						<?php $field( $svc_opt, 'cap_site_key', __( 'Site key', 'nemvo-analytics' ), $services['cap_site_key'] ); ?>
-						<?php $field( $svc_opt, 'cap_secret', __( 'Secret key', 'nemvo-analytics' ), '', array( 'type' => 'password', 'placeholder' => $services['cap_secret'] ? __( 'Unchanged', 'nemvo-analytics' ) : '', 'attrs' => 'autocomplete="new-password"' ) ); ?>
+						<?php
+						$field(
+							$svc_opt,
+							'cap_secret',
+							__( 'Secret key', 'nemvo-analytics' ),
+							'',
+							array(
+								'type'        => 'password',
+								'placeholder' => $services['cap_secret'] ? __( 'Unchanged', 'nemvo-analytics' ) : '',
+								'attrs'       => 'autocomplete="new-password"',
+							)
+						);
+						?>
 					</div>
 					<p class="nva-actions"><button type="button" class="button" data-nva-action="cap-test"><?php esc_html_e( 'Test Cap', 'nemvo-analytics' ); ?></button><span class="nva-result" role="status"></span></p>
 				<?php endif; ?>
@@ -716,7 +742,19 @@ $where = static function ( $status ) use ( $sources ) {
 							<?php $field( $db_opt, 'host', __( 'Host', 'nemvo-analytics' ), $db_form['host'], array( 'placeholder' => 'localhost:3306' ) ); ?>
 							<?php $field( $db_opt, 'name', __( 'Database name', 'nemvo-analytics' ), $db_form['name'], array( 'placeholder' => 'analytics' ) ); ?>
 							<?php $field( $db_opt, 'user', __( 'User', 'nemvo-analytics' ), $db_form['user'] ); ?>
-							<?php $field( $db_opt, 'password', __( 'Password', 'nemvo-analytics' ), '', array( 'type' => 'password', 'placeholder' => $db_form['password'] ? __( 'Unchanged', 'nemvo-analytics' ) : '', 'attrs' => 'autocomplete="new-password"' ) ); ?>
+							<?php
+							$field(
+								$db_opt,
+								'password',
+								__( 'Password', 'nemvo-analytics' ),
+								'',
+								array(
+									'type'        => 'password',
+									'placeholder' => $db_form['password'] ? __( 'Unchanged', 'nemvo-analytics' ) : '',
+									'attrs'       => 'autocomplete="new-password"',
+								)
+							);
+							?>
 							<?php $field( $db_opt, 'prefix', __( 'Table prefix', 'nemvo-analytics' ), $db_form['prefix'] ); ?>
 						</div>
 						<p class="nva-actions"><button type="button" class="button" data-nva-action="db-test"><?php esc_html_e( 'Test connection', 'nemvo-analytics' ); ?></button><span class="nva-result" role="status"></span></p>
@@ -754,7 +792,19 @@ $where = static function ( $status ) use ( $sources ) {
 					<div class="nva-fields nva-fields--2" data-group="queue">
 						<?php $field( $svc_opt, 'queue_host', __( 'Valkey host', 'nemvo-analytics' ), $services['queue_host'], array( 'placeholder' => 'valkey' ) ); ?>
 						<?php $field( $svc_opt, 'queue_port', __( 'Port', 'nemvo-analytics' ), $services['queue_port'], array( 'type' => 'number' ) ); ?>
-						<?php $field( $svc_opt, 'queue_password', __( 'Password (optional)', 'nemvo-analytics' ), '', array( 'type' => 'password', 'placeholder' => $services['queue_password'] ? __( 'Unchanged', 'nemvo-analytics' ) : '', 'attrs' => 'autocomplete="new-password"' ) ); ?>
+						<?php
+						$field(
+							$svc_opt,
+							'queue_password',
+							__( 'Password (optional)', 'nemvo-analytics' ),
+							'',
+							array(
+								'type'        => 'password',
+								'placeholder' => $services['queue_password'] ? __( 'Unchanged', 'nemvo-analytics' ) : '',
+								'attrs'       => 'autocomplete="new-password"',
+							)
+						);
+						?>
 						<?php $field( $svc_opt, 'queue_db', __( 'Database number', 'nemvo-analytics' ), $services['queue_db'], array( 'type' => 'number' ) ); ?>
 						<?php $field( $svc_opt, 'queue_prefix', __( 'Key prefix', 'nemvo-analytics' ), $services['queue_prefix'] ); ?>
 					</div>
@@ -771,7 +821,7 @@ $where = static function ( $status ) use ( $sources ) {
 			<section id="privacy" class="nva-card nva-section">
 				<h2><?php esc_html_e( 'Privacy & retention', 'nemvo-analytics' ); ?></h2>
 				<ul class="nva-ticks">
-					<li><?php esc_html_e( 'No cookies, local storage or fingerprinting, so no consent banner is needed for analytics in most EU interpretations.', 'nemvo-analytics' ); ?></li>
+					<li><?php esc_html_e( 'No cookies, no identifiers in the browser and no fingerprinting, so no consent banner is needed for analytics in most EU interpretations. Local storage holds one flag, only when a visitor or you opt out.', 'nemvo-analytics' ); ?></li>
 					<li><?php esc_html_e( 'Visitors are counted with a hash of IP address and browser, salted with a random secret that is replaced on a schedule. Old secrets are deleted, so hashes cannot be traced back or linked over time.', 'nemvo-analytics' ); ?></li>
 					<li><?php esc_html_e( 'IP addresses and hostnames are never stored. Screen sizes are bucketed and browser versions are dropped.', 'nemvo-analytics' ); ?></li>
 					<li><?php esc_html_e( 'Everything stays on your own servers. Nothing is sent to third parties, and the dashboard loads nothing from other sites.', 'nemvo-analytics' ); ?></li>

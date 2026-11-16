@@ -42,6 +42,7 @@ class Admin {
 		add_action( 'admin_init', array( __CLASS__, 'privacy_policy' ) );
 		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'assets' ) );
 		add_action( 'wp_dashboard_setup', array( __CLASS__, 'dashboard_widget' ) );
+		add_action( 'admin_enqueue_scripts', array( __CLASS__, 'widget_style' ) );
 		add_action( 'admin_post_nemvo_analytics_export', array( __CLASS__, 'export' ) );
 		add_action( 'admin_post_nemvo_analytics_test_report', array( __CLASS__, 'test_report' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( NEMVO_ANALYTICS_FILE ), array( __CLASS__, 'action_links' ) );
@@ -152,16 +153,17 @@ class Admin {
 
 		$url = NEMVO_ANALYTICS_URL . 'assets/';
 		$ver = NEMVO_ANALYTICS_VERSION;
-		wp_enqueue_style( 'nva-admin', $url . 'css/admin.css', array(), $ver );
+		wp_enqueue_style( 'nemvo-analytics-admin', $url . 'css/admin.css', array(), $ver );
 
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended
 		$page = isset( $_GET['page'] ) ? sanitize_key( $_GET['page'] ) : '';
 
 		if ( self::SLUG_SETTINGS === $page ) {
-			wp_enqueue_script( 'nva-settings', $url . 'js/settings.js', array( 'wp-i18n' ), $ver, true );
+			wp_enqueue_script( 'nemvo-analytics-settings', $url . 'js/settings.js', array( 'wp-i18n' ), $ver, true );
+			wp_set_script_translations( 'nemvo-analytics-settings', 'nemvo-analytics', NEMVO_ANALYTICS_DIR . 'languages' );
 			wp_localize_script(
-				'nva-settings',
-				'nvaSettings',
+				'nemvo-analytics-settings',
+				'nemvoAnalyticsSettings',
 				array(
 					'root'      => esc_url_raw( rest_url( Collector::NS ) ),
 					'nonce'     => wp_create_nonce( 'wp_rest' ),
@@ -172,11 +174,11 @@ class Admin {
 			return;
 		}
 
-		wp_enqueue_script( 'nva-chart', $url . 'vendor/chart/chart.umd.min.js', array(), '4.5.1', true );
-		wp_enqueue_script( 'nva-chart-geo', $url . 'vendor/chart/chartjs-chart-geo.umd.min.js', array( 'nva-chart' ), '4.3.6', true );
-		wp_enqueue_script( 'nva-chart-matrix', $url . 'vendor/chart/chartjs-chart-matrix.min.js', array( 'nva-chart' ), '3.1.0', true );
-		wp_enqueue_script( 'nva-dashboard', $url . 'js/dashboard.js', array( 'nva-chart', 'nva-chart-geo', 'nva-chart-matrix', 'wp-i18n' ), $ver, true );
-		wp_set_script_translations( 'nva-dashboard', 'nemvo-analytics', NEMVO_ANALYTICS_DIR . 'languages' );
+		wp_enqueue_script( 'nemvo-analytics-chart', $url . 'vendor/chart/chart.umd.min.js', array(), '4.5.1', true );
+		wp_enqueue_script( 'nemvo-analytics-chart-geo', $url . 'vendor/chart/chartjs-chart-geo.umd.min.js', array( 'nemvo-analytics-chart' ), '4.3.6', true );
+		wp_enqueue_script( 'nemvo-analytics-chart-matrix', $url . 'vendor/chart/chartjs-chart-matrix.min.js', array( 'nemvo-analytics-chart' ), '3.1.0', true );
+		wp_enqueue_script( 'nemvo-analytics-dashboard', $url . 'js/dashboard.js', array( 'nemvo-analytics-chart', 'nemvo-analytics-chart-geo', 'nemvo-analytics-chart-matrix', 'wp-i18n' ), $ver, true );
+		wp_set_script_translations( 'nemvo-analytics-dashboard', 'nemvo-analytics', NEMVO_ANALYTICS_DIR . 'languages' );
 
 		$goals = array();
 		foreach ( array_values( (array) Settings::get( 'goals' ) ) as $i => $goal ) {
@@ -188,37 +190,37 @@ class Admin {
 		$db = DB::conn();
 
 		wp_localize_script(
-			'nva-dashboard',
-			'nvaDashboard',
+			'nemvo-analytics-dashboard',
+			'nemvoAnalyticsDashboard',
 			array(
-				'root'        => esc_url_raw( rest_url( Collector::NS ) ),
-				'nonce'       => wp_create_nonce( 'wp_rest' ),
-				'view'        => self::SLUG_REALTIME === $page ? 'realtime' : 'dashboard',
+				'root'         => esc_url_raw( rest_url( Collector::NS ) ),
+				'nonce'        => wp_create_nonce( 'wp_rest' ),
+				'view'         => self::SLUG_REALTIME === $page ? 'realtime' : 'dashboard',
 				'dashboardUrl' => admin_url( 'admin.php?page=' . self::SLUG ),
-				'realtimeUrl' => admin_url( 'admin.php?page=' . self::SLUG_REALTIME ),
-				'settingsUrl' => admin_url( 'admin.php?page=' . self::SLUG_SETTINGS ),
-				'exportUrl'   => wp_nonce_url( admin_url( 'admin-post.php?action=nemvo_analytics_export' ), 'nemvo_analytics_export' ),
-				'home'        => home_url( '/' ),
-				'siteName'    => get_bloginfo( 'name' ),
-				'mapUrl'      => $url . 'vendor/countries.json?ver=' . $ver,
-				'countries'   => Geo::countries(),
-				'goals'       => $goals,
-				'canManage'   => current_user_can( 'manage_options' ),
-				'today'       => current_datetime()->format( 'Y-m-d' ),
-				'startOfWeek' => (int) get_option( 'start_of_week', 1 ),
-				'locale'      => str_replace( '_', '-', get_user_locale() ),
-				'tracking'    => (bool) Settings::get( 'tracking_enabled' ),
-				'db'          => array(
+				'realtimeUrl'  => admin_url( 'admin.php?page=' . self::SLUG_REALTIME ),
+				'settingsUrl'  => admin_url( 'admin.php?page=' . self::SLUG_SETTINGS ),
+				'exportUrl'    => wp_nonce_url( admin_url( 'admin-post.php?action=nemvo_analytics_export' ), 'nemvo_analytics_export' ),
+				'home'         => home_url( '/' ),
+				'siteName'     => get_bloginfo( 'name' ),
+				'mapUrl'       => $url . 'vendor/countries.json?ver=' . $ver,
+				'countries'    => Geo::countries(),
+				'goals'        => $goals,
+				'canManage'    => current_user_can( 'manage_options' ),
+				'today'        => current_datetime()->format( 'Y-m-d' ),
+				'startOfWeek'  => (int) get_option( 'start_of_week', 1 ),
+				'locale'       => str_replace( '_', '-', get_user_locale() ),
+				'tracking'     => (bool) Settings::get( 'tracking_enabled' ),
+				'db'           => array(
 					'ok'       => (bool) $db,
 					'error'    => DB::error(),
 					'external' => DB::is_external(),
 				),
-				'geoNotice'   => false !== strpos( Geo::mmdb_path( 'geo' ) . Geo::mmdb_path( 'asn' ), 'dbip' ),
+				'geoNotice'    => Geo::dbip_in_use(),
 				'botThreshold' => Bot::threshold(),
-				'botSignals'  => self::signals(),
-				'networks'    => Network::types(),
-				'asn'         => (bool) Geo::database_info( 'asn' ),
-				'warnings'    => array_values(
+				'botSignals'   => self::signals(),
+				'networks'     => Network::types(),
+				'asn'          => (bool) Geo::database_info( 'asn' ),
+				'warnings'     => array_values(
 					array_filter(
 						Health::checks(),
 						static function ( $check ) {
@@ -336,7 +338,20 @@ class Admin {
 		}
 		printf( '<p><a class="button" href="%s">%s</a></p>', esc_url( admin_url( 'admin.php?page=' . self::SLUG ) ), esc_html__( 'Open analytics', 'nemvo-analytics' ) );
 		echo '</div>';
-		echo '<style>.nva-widget__kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.nva-widget__kpis span{display:block;color:#52514e;font-size:12px}.nva-widget__kpis strong{font-size:18px;font-weight:600}.nva-widget__spark{width:100%;height:48px;margin:12px 0}.nva-widget__table{width:100%;border-collapse:collapse}.nva-widget__table th{text-align:left;color:#52514e;font-weight:400;font-size:12px}.nva-widget__table td,.nva-widget__table th{padding:4px 0;border-bottom:1px solid #e1e0d9}.nva-widget__table td:last-child,.nva-widget__table th:last-child{text-align:right;font-variant-numeric:tabular-nums}.nva-widget__table td:first-child{max-width:0;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}</style>';
+	}
+
+	/**
+	 * The widget's few styles, on the WordPress dashboard only.
+	 *
+	 * @param string $hook Current screen hook.
+	 */
+	public static function widget_style( $hook ) {
+		if ( 'index.php' !== $hook || ! current_user_can( Plugin::CAP_VIEW ) ) {
+			return;
+		}
+		wp_register_style( 'nemvo-analytics-widget', false, array(), NEMVO_ANALYTICS_VERSION );
+		wp_enqueue_style( 'nemvo-analytics-widget' );
+		wp_add_inline_style( 'nemvo-analytics-widget', '.nva-widget__kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.nva-widget__kpis span{display:block;color:#52514e;font-size:12px}.nva-widget__kpis strong{font-size:18px;font-weight:600}.nva-widget__spark{width:100%;height:48px;margin:12px 0}.nva-widget__table{width:100%;border-collapse:collapse}.nva-widget__table th{text-align:left;color:#52514e;font-weight:400;font-size:12px}.nva-widget__table td,.nva-widget__table th{padding:4px 0;border-bottom:1px solid #e1e0d9}.nva-widget__table td:last-child,.nva-widget__table th:last-child{text-align:right;font-variant-numeric:tabular-nums}.nva-widget__table td:first-child{max-width:0;width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}' );
 	}
 
 	/**
@@ -370,7 +385,17 @@ class Admin {
 		}
 		$views = self::$post_views[ $post_id ] ?? 0;
 		$path  = (string) wp_parse_url( get_permalink( $post_id ), PHP_URL_PATH );
-		$hash  = 'range=30d&f=' . rawurlencode( wp_json_encode( array( array( 'd' => 'page', 'o' => 'is', 'v' => $path ) ) ) );
+		$hash  = 'range=30d&f=' . rawurlencode(
+			wp_json_encode(
+				array(
+					array(
+						'd' => 'page',
+						'o' => 'is',
+						'v' => $path,
+					),
+				)
+			)
+		);
 		printf( '<a href="%s">%s</a>', esc_url( admin_url( 'admin.php?page=' . self::SLUG ) . '#' . $hash ), esc_html( number_format_i18n( $views ) ) );
 	}
 
@@ -415,11 +440,24 @@ class Admin {
 			foreach ( $rows as $row ) {
 				$last = (int) $row['id'];
 				unset( $row['id'] );
-				fputcsv( $out, $row );
+				fputcsv( $out, array_map( array( __CLASS__, 'csv_cell' ), $row ) );
 			}
-		} while ( count( $rows ) === 5000 );
+			$fetched = count( $rows );
+		} while ( 5000 === $fetched );
 		fclose( $out ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose
 		exit;
+	}
+
+	/**
+	 * Keep spreadsheet programs from running a cell as a formula: page
+	 * titles, referrers and campaign names come from visitors.
+	 *
+	 * @param mixed $value Cell value.
+	 * @return string
+	 */
+	public static function csv_cell( $value ) {
+		$value = (string) $value;
+		return '' !== $value && false !== strpos( "=+-@\t\r", $value[0] ) ? "'" . $value : $value;
 	}
 
 	/**
@@ -431,7 +469,7 @@ class Admin {
 		}
 		check_admin_referer( 'nemvo_analytics_test_report' );
 		$sent = Report::send( wp_get_current_user()->user_email );
-		wp_safe_redirect( admin_url( 'admin.php?page=' . self::SLUG_SETTINGS . '&nva_report=' . ( $sent ? 'sent' : 'failed' ) . '#reports' ) );
+		wp_safe_redirect( admin_url( 'admin.php?page=' . self::SLUG_SETTINGS . '&nemvo_analytics_report=' . ( $sent ? 'sent' : 'failed' ) . '#reports' ) );
 		exit;
 	}
 }

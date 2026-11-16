@@ -107,7 +107,8 @@ class Geo {
 			$asn    = (int) ( $record['autonomous_system_number'] ?? 0 );
 			$org    = (string) ( $record['autonomous_system_organization'] ?? '' );
 			$host   = '';
-			if ( $hostname && Settings::get( 'rdns_lookup' ) && Network::needs_hostname( $asn, $org ) ) {
+			// Only with a network database: without it the hostname cannot be put to use.
+			if ( $hostname && $asn > 0 && Settings::get( 'rdns_lookup' ) && Network::needs_hostname( $asn, $org ) ) {
 				$host = Dns::reverse( $ip );
 			}
 			$net = Network::classify( $asn, $org, $host );
@@ -189,6 +190,16 @@ class Geo {
 	public static function storage_dir() {
 		$uploads = wp_upload_dir( null, false );
 		return trailingslashit( $uploads['basedir'] ) . 'nemvo-analytics';
+	}
+
+	/**
+	 * Whether a DB-IP Lite database is in use, whose license (CC BY 4.0) asks
+	 * for credit wherever its data is shown.
+	 *
+	 * @return bool
+	 */
+	public static function dbip_in_use() {
+		return false !== stripos( self::mmdb_path( 'geo' ) . self::mmdb_path( 'asn' ), 'dbip' );
 	}
 
 	/**
@@ -359,9 +370,9 @@ class Geo {
 			wp_delete_file( $dir . '/dbip-' . ( 'city' === $edition ? 'country' : 'city' ) . '-lite.mmdb' );
 		}
 
-		$state               = get_option( self::STATE_OPTION, array() );
-		$state               = is_array( $state ) ? $state : array();
-		$state[ $edition ]   = time();
+		$state             = get_option( self::STATE_OPTION, array() );
+		$state             = is_array( $state ) ? $state : array();
+		$state[ $edition ] = time();
 		update_option( self::STATE_OPTION, $state, false );
 		self::$readers = array();
 		return $target;

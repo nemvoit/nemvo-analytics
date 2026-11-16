@@ -2,7 +2,7 @@
 (function (Chart, ChartGeo, wp) {
 	'use strict';
 
-	const cfg = window.nvaDashboard;
+	const cfg = window.nemvoAnalyticsDashboard;
 	const app = document.getElementById('nva-app');
 	if (!cfg || !app || !Chart) {
 		return;
@@ -218,7 +218,11 @@
 	const store = {
 		get(key, fallback) {
 			try {
-				const v = localStorage.getItem('nva-' + key);
+				// Keys were called nva-* up to 1.0.2.
+				let v = localStorage.getItem('nemvo-analytics-' + key);
+				if (v === null) {
+					v = localStorage.getItem('nva-' + key);
+				}
 				return v === null ? fallback : JSON.parse(v);
 			} catch (e) {
 				return fallback;
@@ -226,7 +230,8 @@
 		},
 		set(key, value) {
 			try {
-				localStorage.setItem('nva-' + key, JSON.stringify(value));
+				localStorage.setItem('nemvo-analytics-' + key, JSON.stringify(value));
+				localStorage.removeItem('nva-' + key);
 			} catch (e) {}
 		},
 	};
@@ -2753,7 +2758,12 @@
 		csv.addEventListener('click', () => {
 			const head = [DIMS[tab.filter || tab.dim] || tab.label].concat(columns.map((c) => COLS[c][0]));
 			const lines = [head].concat(ds.rows.map((r) => [display(kind === 'page' ? 'page' : dim, r.label).text].concat(columns.map((c) => r[c]))));
-			const text = lines.map((l) => l.map((v) => '"' + String(v === undefined ? '' : v).replace(/"/g, '""') + '"').join(',')).join('\n');
+			// A leading = + - @ tab or CR would make spreadsheets run the cell as a formula; labels come from visitors.
+			const cell = (v) => {
+				const t = String(v === undefined || v === null ? '' : v);
+				return typeof v === 'string' && /^[=+\-@\t\r]/.test(t) ? "'" + t : t;
+			};
+			const text = lines.map((l) => l.map((v) => '"' + cell(v).replace(/"/g, '""') + '"').join(',')).join('\n');
 			const a = h('a', { href: URL.createObjectURL(new Blob([text], { type: 'text/csv' })), download: (tab.key || dim) + '-' + cur.from + '-' + cur.to + '.csv' });
 			document.body.append(a);
 			a.click();

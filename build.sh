@@ -27,5 +27,10 @@ fi
 mkdir -p dist
 zip_file="dist/$plugin-$version.zip"
 rm -f "$zip_file"
-zip -qr "$zip_file" $plugin -x '*.DS_Store' -x '*/.git*' -x '*/node_modules/*'
+# The demo traffic generator (wp nemvo-analytics seed) is for the dev container only.
+zip -qr "$zip_file" $plugin -x '*.DS_Store' -x '*/.git*' -x '*/node_modules/*' -x "$plugin/includes/class-seeder.php"
+if unzip -l "$zip_file" | grep -q 'class-seeder.php'; then
+	echo "The seeder ended up in the zip" >&2
+	exit 1
+fi
 echo "$zip_file"

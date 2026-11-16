@@ -1,12 +1,13 @@
-/*! Nemvo Analytics tracker. Cookieless: sets no cookies and stores no identifiers. */
+/*! Nemvo Analytics tracker. No cookies and no identifiers; one localStorage flag only when a visitor or the site owner opts out. */
 (function (w, d, n) {
 	'use strict';
 
-	var cfg = w.nvaConfig;
-	if (!cfg || w.nvaLoaded) {
+	// nvaConfig/nvaLoaded: the names up to 1.0.2, still on pages cached before an update.
+	var cfg = w.nemvoAnalyticsConfig || w.nvaConfig;
+	if (!cfg || w.nemvoAnalyticsLoaded || w.nvaLoaded) {
 		return;
 	}
-	w.nvaLoaded = true;
+	w.nemvoAnalyticsLoaded = true;
 
 	// While an administrator runs "Check tracking", say why the tracker stops (no identifiers are sent).
 	function stopped(reason, detail) {
@@ -21,14 +22,22 @@
 		} catch (e) {}
 	}
 
-	// Site owners can exclude their own browser by visiting any page with #nva-ignore.
+	// Site owners can exclude their own browser by visiting any page with #nemvo-analytics-ignore (or #nva-ignore,
+	// as up to 1.0.2). The flag is the only thing stored in the browser; "nva_ignore" is its old name.
+	var IGNORE = 'nemvo-analytics-ignore';
+	var OLD_IGNORE = 'nva_ignore';
 	try {
-		if (location.hash === '#nva-ignore') {
-			localStorage.setItem('nva_ignore', '1');
-		} else if (location.hash === '#nva-track') {
-			localStorage.removeItem('nva_ignore');
+		if (location.hash === '#nemvo-analytics-ignore' || location.hash === '#nva-ignore') {
+			localStorage.setItem(IGNORE, '1');
+		} else if (location.hash === '#nemvo-analytics-track' || location.hash === '#nva-track') {
+			localStorage.removeItem(IGNORE);
+			localStorage.removeItem(OLD_IGNORE);
 		}
-		if (localStorage.getItem('nva_ignore') === '1') {
+		if (localStorage.getItem(OLD_IGNORE) === '1') {
+			localStorage.setItem(IGNORE, '1');
+			localStorage.removeItem(OLD_IGNORE);
+		}
+		if (localStorage.getItem(IGNORE) === '1') {
 			stopped('ignore', location.pathname);
 			return;
 		}
@@ -315,15 +324,20 @@
 		send({ t: 'ev', id: pv, n: String(name).slice(0, 64), l: label ? String(label).slice(0, 255) : '' });
 	}
 
+	/* data-nemvo-analytics-* attributes, or data-nva-* as up to 1.0.2. */
+	function attr(el, name) {
+		return el.getAttribute('data-nemvo-analytics-' + name) || el.getAttribute('data-nva-' + name);
+	}
+
 	/* Automatic events: outbound links, downloads, email/phone links and custom data attributes. */
 	function onClick(e) {
 		var target = e.target && e.target.closest ? e.target : null;
 		if (!target) {
 			return;
 		}
-		var custom = target.closest('[data-nva-event]');
+		var custom = target.closest('[data-nemvo-analytics-event],[data-nva-event]');
 		if (custom) {
-			track(custom.getAttribute('data-nva-event'), custom.getAttribute('data-nva-label') || (custom.textContent || '').trim().slice(0, 80));
+			track(attr(custom, 'event'), attr(custom, 'label') || (custom.textContent || '').trim().slice(0, 80));
 		}
 		var a = target.closest('a[href]');
 		if (!a || a === custom) {
@@ -365,7 +379,7 @@
 		try {
 			action = new URL(f.getAttribute('action') || location.href, location.href).pathname;
 		} catch (e) {}
-		return f.getAttribute('data-nva-label') || f.getAttribute('aria-label') || f.id || f.getAttribute('name') || action;
+		return attr(f, 'label') || f.getAttribute('aria-label') || f.id || f.getAttribute('name') || action;
 	}
 
 	function onSubmit(e) {
@@ -469,8 +483,8 @@
 		}
 	}
 
-	/** Public API: nvaTrack('Booked a call', 'Hero CTA'). */
-	w.nvaTrack = track;
+	/** Public API: nemvoAnalyticsTrack('Booked a call', 'Hero CTA'); nvaTrack is the name up to 1.0.2. */
+	w.nemvoAnalyticsTrack = w.nvaTrack = track;
 
 	function safeStart() {
 		try {

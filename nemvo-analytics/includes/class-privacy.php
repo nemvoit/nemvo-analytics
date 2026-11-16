@@ -245,14 +245,20 @@ class Privacy {
 	 */
 	public static function policy_text() {
 		$paragraphs = array(
-			__( 'We use a self-hosted, privacy-friendly analytics tool to understand how our website is used. It does not use cookies or similar technologies, does not store your IP address, and does not create profiles across websites or over time.', 'nemvo-analytics' ),
+			__( 'We use a self-hosted, privacy-friendly analytics tool to understand how our website is used. It does not use cookies, stores no identifier on your device, does not store your IP address, and does not create profiles across websites or over time. Only if you opt out does your browser keep a note of that in its local storage, so you stay opted out.', 'nemvo-analytics' ),
 			__( 'To count unique visitors, a one-way hash of your IP address and browser user agent is combined with a secret that changes regularly; old secrets are deleted, so the hash cannot be linked back to you. We record the pages you visit, how long they are in view and how far you scroll, the referring website or campaign, your approximate location, your device, browser and operating system type, and the kind of network you visit from: for example a home connection, a mobile network, or the network of a company or organisation, whose name we may record. To tell people from automated traffic, your browser may solve a small computational puzzle in the background.', 'nemvo-analytics' ),
 			__( 'The data is stored on our own servers, is never shared with third parties and is deleted automatically after a limited period. Browsers that send a Do Not Track or Global Privacy Control signal are not tracked.', 'nemvo-analytics' ),
 		);
 		return '<p class="privacy-policy-tutorial">' . esc_html__( 'Suggested text for your privacy policy. Adjust it to your configuration. The [nemvo_analytics_optout] shortcode adds an opt-out checkbox.', 'nemvo-analytics' ) . '</p>'
 			. '<strong class="privacy-policy-tutorial">' . esc_html__( 'Suggested text:', 'nemvo-analytics' ) . ' </strong>'
-			. implode( '', array_map( static function ( $p ) {
-				return '<p>' . esc_html( $p ) . '</p>';
-			}, $paragraphs ) );
+			. implode(
+				'',
+				array_map(
+					static function ( $p ) {
+						return '<p>' . esc_html( $p ) . '</p>';
+					},
+					$paragraphs
+				)
+			);
 	}
 }

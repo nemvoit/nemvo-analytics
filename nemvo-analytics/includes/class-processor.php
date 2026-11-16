@@ -63,7 +63,8 @@ class Processor {
 		usort(
 			$hits,
 			static function ( $a, $b ) {
-				return strcmp( (string) $a['at'], (string) $b['at'] ) ?: $a['_i'] - $b['_i'];
+				$order = strcmp( (string) $a['at'], (string) $b['at'] );
+				return 0 !== $order ? $order : $a['_i'] - $b['_i'];
 			}
 		);
 
@@ -103,9 +104,9 @@ class Processor {
 			$cutoff = gmdate( 'Y-m-d H:i:s', strtotime( $min_at ) - $timeout );
 			$rows   = $db->get_results( "SELECT $cols FROM `$t_s` WHERE visitor IN (" . self::in( $db, array_keys( $visitors ) ) . ') AND ' . $db->prepare( 'last_seen >= %s', $cutoff ) . ' ORDER BY id', ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery
 			foreach ( (array) $rows as $row ) {
-				$row                          = self::session_row( $row );
-				$sessions[ $row['id'] ]       = $row;
-				$open[ $row['visitor'] ]      = $row['id'];
+				$row                     = self::session_row( $row );
+				$sessions[ $row['id'] ]  = $row;
+				$open[ $row['visitor'] ] = $row['id'];
 			}
 		}
 
@@ -148,13 +149,13 @@ class Processor {
 							$db->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 							return false;
 						}
-						$sid                       = (int) $db->insert_id;
-						$row['id']                 = $sid;
-						$row['dirty']              = false;
-						$sessions[ $sid ]          = $row;
-						$open[ $hit['visitor'] ]   = $sid;
-						$prev_path                 = '';
-						$is_entry                  = 1;
+						$sid                     = (int) $db->insert_id;
+						$row['id']               = $sid;
+						$row['dirty']            = false;
+						$sessions[ $sid ]        = $row;
+						$open[ $hit['visitor'] ] = $sid;
+						$prev_path               = '';
+						$is_entry                = 1;
 					} else {
 						$s         = &$sessions[ $sid ];
 						$prev_path = $s['exit_path'];
@@ -165,7 +166,7 @@ class Processor {
 						} elseif ( '' !== $s['exit_pv'] ) {
 							$clear_exit[] = $s['exit_pv'];
 						}
-						$s['pageviews']++;
+						++$s['pageviews'];
 						$s['last_seen'] = max( $s['last_seen'], $at );
 						$s['exit_path'] = $hit['path'];
 						$s['exit_pv']   = $hit['pv'];
@@ -237,8 +238,8 @@ class Processor {
 					$v = $views[ $hit['pv'] ];
 					$s = &$sessions[ (int) $v['session_id'] ];
 					if ( $s['events'] < 500 ) {
-						$new_events[]   = array( (int) $v['session_id'], $hit['pv'], $s['visitor'], $at, (string) $hit['name'], (string) $hit['label'], '', $v['path'] );
-						$s['events']++;
+						$new_events[] = array( (int) $v['session_id'], $hit['pv'], $s['visitor'], $at, (string) $hit['name'], (string) $hit['label'], '', $v['path'] );
+						++$s['events'];
 						$s['is_bounce'] = 0;
 						$s['last_seen'] = max( $s['last_seen'], $at );
 						$s['dirty']     = true;
@@ -372,7 +373,7 @@ class Processor {
 		$rows  = $db->get_results( $db->prepare( "SELECT id, bot_flags FROM `$t_s` WHERE last_seen BETWEEN %s AND %s AND bot_flags & %d = 0 LIMIT 5000", $since, $ended, Bot::INTERACTION | Bot::PASSIVE ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
 		$by    = array();
 		foreach ( (array) $rows as $row ) {
-			$flags                                  = (int) $row->bot_flags | Bot::PASSIVE;
+			$flags                                       = (int) $row->bot_flags | Bot::PASSIVE;
 			$by[ $flags . ':' . Bot::score( $flags ) ][] = (int) $row->id;
 		}
 		foreach ( $by as $key => $ids ) {
@@ -446,9 +447,15 @@ class Processor {
 	 * @return string
 	 */
 	private static function in( $db, array $values ) {
-		return implode( ',', array_map( static function ( $v ) use ( $db ) {
-			return $db->prepare( '%s', $v );
-		}, $values ) );
+		return implode(
+			',',
+			array_map(
+				static function ( $v ) use ( $db ) {
+					return $db->prepare( '%s', $v );
+				},
+				$values
+			)
+		);
 	}
 
 	/**

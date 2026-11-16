@@ -13,6 +13,7 @@ countries.json                      world-atlas 2.0.2            ISC        http
                                     were changed from ISO numeric to ISO alpha-2 codes; the "land" object
                                     was removed.
 cap/                                @cap.js/widget 0.1.58 and @cap.js/wasm 0.0.8 (Apache-2.0),
-                                    pako 2.1.0 (MIT, Zlib). See cap/README.txt.
+                                    HashWX in hashwx.wasm (LGPL-3.0), pako 2.1.0 (MIT, Zlib).
+                                    Exact sources in cap/README.txt.
 
 License texts are in the LICENSE-*.txt files next to each component.

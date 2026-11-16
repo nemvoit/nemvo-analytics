@@ -77,7 +77,7 @@ $hit = static function ( array $payload, array $headers = array() ) {
 	foreach ( $headers as $k => $v ) {
 		$_SERVER[ $k ] = $v;
 	}
-	$request = new WP_REST_Request( 'POST', '/nemvo/v1/e' );
+	$request = new WP_REST_Request( 'POST', '/' . NemvoAnalytics\Collector::NS . '/e' );
 	$request->set_body( wp_json_encode( $payload ) );
 	$request->set_header( 'accept-language', 'sv' );
 	$request->set_header( 'sec-fetch-site', 'same-origin' );
@@ -99,7 +99,7 @@ $hit( $pv );
 $log = Diagnostics::entries();
 $why = wp_list_pluck( $log, 'reason' );
 nva_ok( in_array( 'gpc', $why, true ), 'a Global Privacy Control request is logged with its reason' );
-nva_ok( in_array( 'host', $why, true ) && in_array( 'another-site.example', wp_list_pluck( $log, 'host' ), true ), 'a hit for another host is logged with that host' );
+nva_ok( in_array( 'host', $why, true ) && in_array( 'another-site.example', array_column( $log, 'host' ), true ), 'a hit for another host is logged with that host' );
 nva_ok( in_array( 'client_dnt', $why, true ), 'a browser that stopped because of Do Not Track says so' );
 $stored = array_values( array_filter( $log, static function ( $e ) {
 	return 'stored' === $e['outcome'] && 'pv' === $e['type'];

@@ -35,7 +35,7 @@ function watch(page, label, problems) {
 	page.on('console', (m) => m.type() === 'error' && problems.push(`${label}: console: ${m.text()}`));
 	page.on('pageerror', (e) => problems.push(`${label}: exception: ${e.message}`));
 	// Beacons still in flight when the page navigates away are reported as aborted; they arrive anyway.
-	page.on('requestfailed', (r) => !/favicon/.test(r.url()) && !(/\/nemvo\/v1\/e$/.test(r.url()) && /ABORTED/.test(r.failure() && r.failure().errorText)) && problems.push(`${label}: request failed: ${r.url()} ${r.failure() && r.failure().errorText}`));
+	page.on('requestfailed', (r) => !/favicon/.test(r.url()) && !(/\/nemvo(-analytics)?\/v1\/e$/.test(r.url()) && /ABORTED/.test(r.failure() && r.failure().errorText)) && problems.push(`${label}: request failed: ${r.url()} ${r.failure() && r.failure().errorText}`));
 	page.on('response', (r) => r.status() >= 400 && !/favicon/.test(r.url()) && problems.push(`${label}: HTTP ${r.status()} ${r.url()}`));
 	page.on('request', (r) => {
 		const u = new URL(r.url());
@@ -59,8 +59,9 @@ try {
 	await visitor.setViewport({ width: 1280, height: 900 });
 	const marker = 'e2e-' + RUN;
 	await visitor.goto(`${BASE}/?utm_source=${marker}&utm_medium=email&utm_campaign=e2e`, { waitUntil: 'networkidle0' });
-	ok(await visitor.$('#nva-tracker'), 'tracker is printed on the page');
-	const attrs = await visitor.$eval('#nva-tracker', (s) => [s.getAttribute('data-no-optimize'), s.getAttribute('data-cfasync'), s.hasAttribute('nowprocket')]);
+	ok(await visitor.$('#nemvo-analytics-tracker-js-after'), 'tracker is printed on the page');
+	ok(await visitor.evaluate(() => typeof window.nemvoAnalyticsTrack === 'function' && window.nvaTrack === window.nemvoAnalyticsTrack), 'nemvoAnalyticsTrack and its old name nvaTrack are defined');
+	const attrs = await visitor.$eval('#nemvo-analytics-tracker-js-after', (s) => [s.getAttribute('data-no-optimize'), s.getAttribute('data-cfasync'), s.hasAttribute('nowprocket')]);
 	ok(attrs[0] === '1' && attrs[1] === 'false' && attrs[2], 'tracker carries the optimizer opt-out attributes');
 	for (let i = 0; i < 6; i++) {
 		await visitor.mouse.move(200 + i * 40, 300 + i * 20);
@@ -140,12 +141,12 @@ try {
 
 	// Dark mode.
 	await page.goto(`${BASE}/wp-admin/admin.php?page=nemvo-analytics#range=30d`, { waitUntil: 'networkidle0' });
-	await page.evaluate(() => localStorage.setItem('nva-theme', '"dark"'));
+	await page.evaluate(() => localStorage.setItem('nemvo-analytics-theme', '"dark"'));
 	await page.reload({ waitUntil: 'networkidle0' });
 	await page.waitForFunction(() => document.querySelectorAll('#nva-app canvas').length >= 5 && !document.querySelector('#nva-app .is-loading'), { timeout: 30000 });
 	await sleep(800);
 	await page.screenshot({ path: join(SHOTS, 'dashboard-dark.png'), fullPage: true });
-	await page.evaluate(() => localStorage.setItem('nva-theme', '"auto"'));
+	await page.evaluate(() => localStorage.setItem('nemvo-analytics-theme', '"auto"'));
 
 	// Realtime.
 	await page.goto(`${BASE}/wp-admin/admin.php?page=nemvo-analytics-realtime`, { waitUntil: 'networkidle0' });

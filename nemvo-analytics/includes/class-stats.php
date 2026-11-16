@@ -268,7 +268,7 @@ class Stats {
 			return ( $negate ? 'NOT ' : '' ) . $this->goal_sql( $goal, $session_ref );
 		}
 		if ( 'bot_flag' === $f['d'] ) {
-			return $this->db->prepare( "(s.bot_flags & %d) " . ( $negate ? '=' : '<>' ) . ' 0', absint( $f['v'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+			return $this->db->prepare( '(s.bot_flags & %d) ' . ( $negate ? '=' : '<>' ) . ' 0', absint( $f['v'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
 		if ( 'event' === $f['d'] ) {
 			$cond = $this->compare( 'fe.name', $negate ? 'is' : $f['o'], $f['v'] );
@@ -449,8 +449,11 @@ class Stats {
 				$step   = new \DateInterval( 'P1D' );
 				$format = 'Y-m-d';
 		}
-		for ( $t = $start; $t <= $end && count( $keys ) < 2000; $t = $t->add( $step ) ) {
+		for ( $t = $start; $t <= $end; $t = $t->add( $step ) ) {
 			$keys[] = $t->format( $format );
+			if ( 2000 === count( $keys ) ) {
+				break;
+			}
 		}
 		return $keys;
 	}
@@ -536,7 +539,7 @@ class Stats {
 			'conversions'  => 'conversions',
 			'cr'           => 'conversions / visits',
 		);
-		$order = $orders[ $sort ] ?? 'visitors';
+		$order  = $orders[ $sort ] ?? 'visitors';
 
 		$rows  = $this->db->get_results( "SELECT $expr AS label, " . $this->session_columns() . ' FROM ' . $this->sessions_from() . " WHERE $where GROUP BY label ORDER BY $order $dir, label ASC LIMIT $offset, $limit" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$total = (int) $this->db->get_var( "SELECT COUNT(DISTINCT $expr) FROM `{$this->s}` s WHERE $where" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -607,7 +610,7 @@ class Stats {
 			'exits'     => 'exits',
 			'exit_rate' => 'exits / pageviews',
 		);
-		$order = $orders[ $sort ] ?? ( 'exits' === $dim ? 'exits' : 'visitors' );
+		$order  = $orders[ $sort ] ?? ( 'exits' === $dim ? 'exits' : 'visitors' );
 
 		$rows = $this->db->get_results( "SELECT $expr AS label, COALESCE(MAX(CASE WHEN p.content_type <> 'search' THEN p.title END), MAX(p.title)) AS title, MAX(p.post_id) AS post_id, COUNT(DISTINCT p.visitor) AS visitors, COUNT(*) AS pageviews, AVG(NULLIF(p.engaged_ms, 0)) AS avg_time, AVG(NULLIF(p.scroll, 0)) AS scroll, SUM(p.is_entry) AS entries, SUM(p.is_exit) AS exits FROM $from GROUP BY label$having ORDER BY $order $dir, label ASC LIMIT $offset, $limit" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		if ( $having ) {
@@ -738,11 +741,11 @@ class Stats {
 		$next = $this->db->get_results( "SELECT p.path AS label, COUNT(*) AS n FROM $from AND " . $this->db->prepare( 'p.prev_path = %s', $path ) . ' GROUP BY p.path ORDER BY n DESC LIMIT 8' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$page = $this->db->get_row( "SELECT COUNT(*) AS pageviews, COUNT(DISTINCT p.visitor) AS visitors, SUM(p.is_exit) AS exits, SUM(p.is_entry) AS entries, AVG(NULLIF(p.engaged_ms, 0)) AS avg_time, AVG(NULLIF(p.scroll, 0)) AS scroll, COALESCE(MAX(CASE WHEN p.content_type <> 'search' THEN p.title END), MAX(p.title)) AS title FROM $from AND " . $this->db->prepare( 'p.path = %s', $path ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
-		$map = static function ( $rows, $empty ) {
+		$map = static function ( $rows, $unknown ) {
 			$out = array();
 			foreach ( (array) $rows as $r ) {
 				$out[] = array(
-					'label' => '' === $r->label ? $empty : (string) $r->label,
+					'label' => '' === $r->label ? $unknown : (string) $r->label,
 					'n'     => (int) $r->n,
 				);
 			}
@@ -822,10 +825,10 @@ class Stats {
 			return null;
 		}
 		unset( $session['exit_pv'] );
-		$pages  = $db->get_results( $db->prepare( "SELECT pv, created_at, path, title, content_type, engaged_ms, scroll, status FROM `$p` WHERE session_id = %d ORDER BY id LIMIT 500", $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
-		$events = $db->get_results( $db->prepare( "SELECT pv, created_at, name, label, meta, path FROM `$e` WHERE session_id = %d ORDER BY id LIMIT 500", $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
-		$labels = Bot::labels();
-		$flags  = array();
+		$pages         = $db->get_results( $db->prepare( "SELECT pv, created_at, path, title, content_type, engaged_ms, scroll, status FROM `$p` WHERE session_id = %d ORDER BY id LIMIT 500", $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		$events        = $db->get_results( $db->prepare( "SELECT pv, created_at, name, label, meta, path FROM `$e` WHERE session_id = %d ORDER BY id LIMIT 500", $id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		$labels        = Bot::labels();
+		$flags         = array();
 		$session_flags = (int) $session['bot_flags'];
 		if ( $session_flags & Bot::JS ) {
 			$session_flags &= ~Bot::NO_JS;
@@ -873,7 +876,7 @@ class Stats {
 		foreach ( array_keys( Bot::weights() ) as $flag ) {
 			$sums[] = "SUM(s.bot_score >= $threshold AND (s.bot_flags & $flag) <> 0) AS f$flag";
 		}
-		$row = $this->db->get_row( "SELECT SUM(s.bot_score < $threshold) AS humans, SUM(s.bot_score >= $threshold) AS bots, " . implode( ', ', $sums ) . " FROM `{$this->s}` s WHERE $where", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery
+		$row     = $this->db->get_row( "SELECT SUM(s.bot_score < $threshold) AS humans, SUM(s.bot_score >= $threshold) AS bots, " . implode( ', ', $sums ) . " FROM `{$this->s}` s WHERE $where", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery
 		$labels  = Bot::labels();
 		$reasons = array();
 		foreach ( Bot::weights() as $flag => $weight ) {

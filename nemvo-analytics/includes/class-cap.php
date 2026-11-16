@@ -110,16 +110,21 @@ class Cap {
 	 * Register the relay routes.
 	 */
 	public static function register_routes() {
-		foreach ( array( 'challenge', 'redeem' ) as $action ) {
-			register_rest_route(
-				Collector::NS,
-				'/cap/' . $action,
-				array(
-					'methods'             => 'POST',
-					'callback'            => array( __CLASS__, 'relay' ),
-					'permission_callback' => '__return_true',
-				)
-			);
+		foreach ( Collector::NAMESPACES as $ns ) {
+			foreach ( array( 'challenge', 'redeem' ) as $action ) {
+				register_rest_route(
+					$ns,
+					'/cap/' . $action,
+					array(
+						'methods'             => 'POST',
+						'callback'            => array( __CLASS__, 'relay' ),
+						// Public on purpose: visitors' browsers solve the challenge. Only answers while Cap is
+						// on, forwards nothing but the body (max 64 KB) to the configured Cap server, and each
+						// visitor (by anonymous hash) is throttled; Cap rate-limits per visitor address as well.
+						'permission_callback' => '__return_true',
+					)
+				);
+			}
 		}
 	}
 
@@ -138,6 +143,10 @@ class Cap {
 		$body   = (string) $request->get_body();
 		if ( strlen( $body ) > 65536 ) {
 			return new \WP_REST_Response( array( 'error' => 'Too large.' ), 413 );
+		}
+		$ua = isset( $_SERVER['HTTP_USER_AGENT'] ) ? substr( sanitize_text_field( wp_unslash( $_SERVER['HTTP_USER_AGENT'] ) ), 0, 512 ) : '';
+		if ( ! Throttle::allow( 'cap', Privacy::visitor_hash( Privacy::client_ip(), $ua ) ) ) {
+			return new \WP_REST_Response( array( 'error' => 'Too many requests.' ), 429 );
 		}
 		$response = wp_remote_post(
 			trailingslashit( $cfg['url'] ) . rawurlencode( $cfg['site_key'] ) . '/' . $action,
@@ -187,11 +196,45 @@ class Cap {
 			return false;
 		}
 		$data = json_decode( wp_remote_retrieve_body( $response ), true );
+		// A rejected secret fails every visit's verification: Site Health reports it.
+		$error = is_array( $data ) && ! empty( $data['error'] ) && is_scalar( $data['error'] ) ? (string) $data['error'] : '';
+		self::note_rejection( false !== stripos( $error, 'secret' ) ? $error : '' );
 		return ! empty( $data['success'] );
 	}
 
 	/**
-	 * Check that the server is reachable and accepts the secret (settings page).
+	 * Remember (or forget) that Cap rejected the keys, for Site Health. Writes
+	 * the option only when the state changes.
+	 *
+	 * @param string $error Cap's error message, or '' when the keys were accepted.
+	 */
+	public static function note_rejection( $error ) {
+		$env = get_option( Health::OPTION, array() );
+		$env = is_array( $env ) ? $env : array();
+		if ( '' === $error && ! empty( $env['cap_rejected'] ) ) {
+			unset( $env['cap_rejected'] );
+			update_option( Health::OPTION, $env, true );
+		} elseif ( '' !== $error && empty( $env['cap_rejected'] ) ) {
+			$env['cap_rejected'] = time();
+			update_option( Health::OPTION, $env, true );
+		}
+	}
+
+	/**
+	 * When Cap last rejected the keys while verifying a visit (0 = not since they last worked).
+	 *
+	 * @return int Unix time.
+	 */
+	public static function rejected_since() {
+		$env = get_option( Health::OPTION, array() );
+		return is_array( $env ) ? (int) ( $env['cap_rejected'] ?? 0 ) : 0;
+	}
+
+	/**
+	 * Check that the server is reachable and accepts the keys (settings page).
+	 * Cap checks a token's shape (<site key>:<id>:<n>) before the keys, so the
+	 * made-up token has that shape: valid keys then get "Token not found",
+	 * wrong ones "Invalid site key or secret".
 	 *
 	 * @param array $s Services settings.
 	 * @return array{ok:bool,message:string}
@@ -211,7 +254,7 @@ class Cap {
 				'body'    => wp_json_encode(
 					array(
 						'secret'   => $s['cap_secret'],
-						'response' => 'connection-test',
+						'response' => $s['cap_site_key'] . ':connection-test:0',
 					)
 				),
 			)
@@ -231,10 +274,18 @@ class Cap {
 				'message' => sprintf( __( 'The server answered with HTTP %d but not like Cap. Check the address and the site key.', 'nemvo-analytics' ), (int) wp_remote_retrieve_response_code( $response ) ),
 			);
 		}
-		if ( ! empty( $data['error'] ) && false !== stripos( (string) $data['error'], 'secret' ) ) {
+		$error = ! empty( $data['error'] ) && is_scalar( $data['error'] ) ? (string) $data['error'] : '';
+		if ( false !== stripos( $error, 'secret' ) ) {
 			return array(
 				'ok'      => false,
 				'message' => __( 'Cap rejected the site key or the secret key.', 'nemvo-analytics' ),
+			);
+		}
+		if ( empty( $data['success'] ) && false === stripos( $error, 'not found' ) ) {
+			return array(
+				'ok'      => false,
+				/* translators: %s: error message from Cap */
+				'message' => sprintf( __( 'Cap answered, but the keys could not be checked: %s', 'nemvo-analytics' ), '' !== $error ? $error : __( 'unknown error', 'nemvo-analytics' ) ),
 			);
 		}
 		return array(

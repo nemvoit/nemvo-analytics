@@ -133,7 +133,7 @@ class Health {
 				'warning',
 				/* translators: %s: plugin names */
 				sprintf( __( 'Caching or optimization detected: %s', 'nemvo-analytics' ), implode( ', ', $caches ) ),
-				__( 'Nemvo Analytics is made for sites without page caching. Cached pages are still counted, but "delay JavaScript", combine and minify features can hold back or break the tracker, and a cached page can be served to excluded logged-in users. Exclude the script with the id "nva-tracker" from those features, or turn the cache off.', 'nemvo-analytics' ),
+				__( 'Nemvo Analytics is made for sites without page caching. Cached pages are still counted, but "delay JavaScript", combine and minify features can hold back or break the tracker, and a cached page can be served to excluded logged-in users. Exclude the Nemvo Analytics tracker (the script with the id "nemvo-analytics-tracker-js-after", or containing "nemvoAnalyticsConfig") from those features, or turn the cache off.', 'nemvo-analytics' ),
 				'tracking',
 			);
 		}
@@ -178,6 +178,10 @@ class Health {
 				/* translators: %s: number of hits */
 				$out[] = array( 'good', __( 'The queue is working', 'nemvo-analytics' ), sprintf( __( '%s hits waiting.', 'nemvo-analytics' ), number_format_i18n( $length ) ), 'queue' );
 			}
+		}
+
+		if ( Cap::enabled() && Cap::rejected_since() ) {
+			$out[] = array( 'critical', __( 'Cap rejects the site key or the secret key', 'nemvo-analytics' ), __( 'Visits cannot prove they are people, so more of them count as automated. Check the keys under Bot detection and test the connection.', 'nemvo-analytics' ), 'bots' );
 		}
 
 		$out[] = Cap::enabled()

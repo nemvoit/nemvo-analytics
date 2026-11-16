@@ -31,43 +31,213 @@ class Rest_Stats {
 	);
 
 	/**
-	 * Register routes.
+	 * Register routes, under the current namespace and the one of 1.0.0-1.0.2.
+	 *
+	 * None of them is public: they need view_nemvo_analytics or
+	 * manage_options, are left out of the public REST index, and their
+	 * arguments are only coerced to safe types before the permission check
+	 * (never rejected), so an anonymous caller always gets 401 and learns
+	 * nothing about the arguments. The callbacks validate the values. The
+	 * routes that change or delete data also require the wp_rest nonce.
 	 */
 	public static function register_routes() {
-		$view   = static function () {
+		$view         = static function () {
 			return current_user_can( Plugin::CAP_VIEW );
 		};
-		$manage = static function () {
+		$manage       = static function () {
 			return current_user_can( 'manage_options' );
 		};
+		$manage_nonce = static function ( \WP_REST_Request $request ) {
+			if ( ! current_user_can( 'manage_options' ) ) {
+				return false;
+			}
+			$nonce = (string) $request->get_header( 'x_wp_nonce' );
+			if ( ! wp_verify_nonce( '' !== $nonce ? $nonce : (string) $request->get_param( '_wpnonce' ), 'wp_rest' ) ) {
+				return new \WP_Error( 'rest_cookie_invalid_nonce', __( 'Cookie check failed', 'nemvo-analytics' ), array( 'status' => 403 ) );
+			}
+			return true;
+		};
+
+		$text   = array( __CLASS__, 'arg_text' );
+		$raw    = array( __CLASS__, 'arg_raw' );
+		$key    = array( __CLASS__, 'arg_key' );
+		$int    = array( __CLASS__, 'arg_int' );
+		$bool   = array( __CLASS__, 'arg_bool' );
+		$list   = array( __CLASS__, 'arg_list' );
+		$report = array(
+			'from'     => $text,
+			'to'       => $text,
+			'filters'  => $raw,
+			'traffic'  => $key,
+			'interval' => $key,
+			'compare'  => $key,
+			'dim'      => $key,
+			'limit'    => $int,
+			'offset'   => $int,
+			'q'        => $text,
+			'sort'     => $key,
+			'dir'      => $key,
+			'event'    => $text,
+			'path'     => $raw,
+			'id'       => $int,
+		);
 
 		$routes = array(
-			'/stats/batch'         => array( 'POST', 'batch', $view ),
-			'/admin/db-test'       => array( 'POST', 'db_test', $manage ),
-			'/admin/install'       => array( 'POST', 'install', $manage ),
-			'/admin/purge'         => array( 'POST', 'purge', $manage ),
-			'/admin/geo'           => array( 'POST', 'geo_download', $manage ),
-			'/admin/lookup'        => array( 'POST', 'lookup', $manage ),
-			'/admin/migrate'       => array( 'POST', 'migrate', $manage ),
-			'/admin/queue-test'    => array( 'POST', 'queue_test', $manage ),
-			'/admin/queue-work'    => array( 'POST', 'queue_work', $manage ),
-			'/admin/cap-test'      => array( 'POST', 'cap_test', $manage ),
-			'/admin/diagnostics'   => array( 'POST', 'diagnostics', $manage ),
+			'/stats/batch'       => array( 'POST', 'batch', $view, array( 'requests' => $list ) ),
+			'/admin/db-test'     => array(
+				'POST',
+				'db_test',
+				$manage,
+				array(
+					'host'     => $text,
+					'name'     => $text,
+					'user'     => $text,
+					'password' => $raw,
+				),
+			),
+			'/admin/install'     => array( 'POST', 'install', $manage_nonce, array() ),
+			'/admin/purge'       => array(
+				'POST',
+				'purge',
+				$manage_nonce,
+				array(
+					'inactive' => $bool,
+					'all'      => $bool,
+					'before'   => $text,
+				),
+			),
+			'/admin/geo'         => array( 'POST', 'geo_download', $manage, array( 'edition' => $key ) ),
+			'/admin/lookup'      => array( 'POST', 'lookup', $manage, array( 'ip' => $text ) ),
+			'/admin/migrate'     => array(
+				'POST',
+				'migrate',
+				$manage_nonce,
+				array(
+					'action'  => $key,
+					'to'      => $key,
+					'replace' => $bool,
+				),
+			),
+			'/admin/queue-test'  => array(
+				'POST',
+				'queue_test',
+				$manage,
+				array(
+					'host'     => $text,
+					'port'     => $int,
+					'password' => $raw,
+					'db'       => $int,
+				),
+			),
+			'/admin/queue-work'  => array( 'POST', 'queue_work', $manage, array() ),
+			'/admin/cap-test'    => array(
+				'POST',
+				'cap_test',
+				$manage,
+				array(
+					'url'      => $text,
+					'site_key' => $text,
+					'secret'   => $raw,
+				),
+			),
+			'/admin/diagnostics' => array( 'POST', 'diagnostics', $manage, array( 'action' => $key ) ),
 		);
 		foreach ( self::REPORTS as $route => $callback ) {
-			$routes[ '/stats/' . $route ] = array( 'GET', $callback, $view );
+			$routes[ '/stats/' . $route ] = array( 'GET', $callback, $view, $report );
 		}
-		foreach ( $routes as $route => $def ) {
-			register_rest_route(
-				Collector::NS,
-				$route,
-				array(
-					'methods'             => $def[0],
-					'callback'            => array( __CLASS__, $def[1] ),
-					'permission_callback' => $def[2],
-				)
-			);
+		foreach ( Collector::NAMESPACES as $ns ) {
+			foreach ( $routes as $route => $def ) {
+				$args = array();
+				foreach ( $def[3] as $name => $sanitize ) {
+					$args[ $name ] = array(
+						'required'          => false,
+						'sanitize_callback' => $sanitize,
+						'validate_callback' => array( __CLASS__, 'arg_any' ),
+					);
+				}
+				register_rest_route(
+					$ns,
+					$route,
+					array(
+						'methods'             => $def[0],
+						'callback'            => array( __CLASS__, $def[1] ),
+						'permission_callback' => $def[2],
+						'args'                => $args,
+						'show_in_index'       => false,
+					)
+				);
+			}
 		}
+	}
+
+	/**
+	 * Arguments are checked in the callbacks, after the permission check (see
+	 * register_routes()), so this accepts every value.
+	 *
+	 * @return true
+	 */
+	public static function arg_any() {
+		return true;
+	}
+
+	/**
+	 * A single-line text argument.
+	 *
+	 * @param mixed $value Value.
+	 * @return string
+	 */
+	public static function arg_text( $value ) {
+		return is_scalar( $value ) ? sanitize_text_field( (string) $value ) : '';
+	}
+
+	/**
+	 * A string kept as sent (passwords, JSON filters, paths); checked where used.
+	 *
+	 * @param mixed $value Value.
+	 * @return string
+	 */
+	public static function arg_raw( $value ) {
+		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
+	 * A keyword.
+	 *
+	 * @param mixed $value Value.
+	 * @return string
+	 */
+	public static function arg_key( $value ) {
+		return is_scalar( $value ) ? sanitize_key( (string) $value ) : '';
+	}
+
+	/**
+	 * A non-negative integer.
+	 *
+	 * @param mixed $value Value.
+	 * @return int
+	 */
+	public static function arg_int( $value ) {
+		return is_scalar( $value ) ? absint( $value ) : 0;
+	}
+
+	/**
+	 * A boolean.
+	 *
+	 * @param mixed $value Value.
+	 * @return bool
+	 */
+	public static function arg_bool( $value ) {
+		return is_scalar( $value ) && rest_sanitize_boolean( $value );
+	}
+
+	/**
+	 * A list (the batch's sub-requests; each one is checked in batch()).
+	 *
+	 * @param mixed $value Value.
+	 * @return array
+	 */
+	public static function arg_list( $value ) {
+		return is_array( $value ) ? array_slice( array_values( $value ), 0, 25 ) : array();
 	}
 
 	/**
@@ -176,21 +346,21 @@ class Rest_Stats {
 	 * Cache a report in a persistent object cache, when the site has one:
 	 * a minute for ranges that include today, an hour for the past.
 	 *
-	 * @param string   $name Report.
-	 * @param array    $key  Parameters.
-	 * @param callable $fn   Builds the report.
+	 * @param string   $name  Report.
+	 * @param array    $key   Parameters.
+	 * @param callable $build Builds the report.
 	 * @return mixed
 	 */
-	private static function cached( $name, array $key, $fn ) {
+	private static function cached( $name, array $key, $build ) {
 		if ( ! wp_using_ext_object_cache() ) {
-			return $fn();
+			return $build();
 		}
 		$id  = $name . ':' . md5( wp_json_encode( array( $key, DB::active(), Bot::threshold(), Settings::get( 'goals' ) ) ) );
 		$hit = wp_cache_get( $id, 'nemvo_analytics' );
 		if ( false !== $hit ) {
 			return $hit;
 		}
-		$value = $fn();
+		$value = $build();
 		$past  = isset( $key['to'] ) && $key['to'] < current_datetime()->format( 'Y-m-d' );
 		wp_cache_set( $id, $value, 'nemvo_analytics', $past ? HOUR_IN_SECONDS : MINUTE_IN_SECONDS );
 		return $value;
@@ -553,6 +723,7 @@ class Rest_Stats {
 				'company'  => $net['company'],
 				'hostname' => Settings::get( 'rdns_lookup' ) ? Dns::reverse( $ip ) : '',
 				'ms'       => (int) round( ( microtime( true ) - $start ) * 1000 ),
+				'credit'   => Geo::dbip_in_use(),
 			)
 		);
 	}

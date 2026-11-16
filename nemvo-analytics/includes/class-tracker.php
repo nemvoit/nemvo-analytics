@@ -11,8 +11,24 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Prints the tracking script with page context (post id, 404, search).
+ *
+ * The tracker is a registered script handle. Printed inline (the default) it
+ * has no source file and its code is added with wp_add_inline_script(), so
+ * it costs no extra request; as a file it loads assets/js/tracker.js with
+ * the configuration added before it. Either way the tags carry the
+ * attributes that keep caching and optimization plugins away from it.
  */
 class Tracker {
+
+	/**
+	 * Script handle (tags get the ids nemvo-analytics-tracker-js*).
+	 */
+	const HANDLE = 'nemvo-analytics-tracker';
+
+	/**
+	 * Handle of the opt-out shortcode's script.
+	 */
+	const OPTOUT_HANDLE = 'nemvo-analytics-optout';
 
 	/**
 	 * Id of the pageview recorded on the server for this request.
@@ -26,8 +42,23 @@ class Tracker {
 	 */
 	public static function init() {
 		add_action( 'template_redirect', array( __CLASS__, 'record_request' ), 9999 );
-		add_action( 'wp_footer', array( __CLASS__, 'output' ), 99 );
+		add_action( 'wp_enqueue_scripts', array( __CLASS__, 'enqueue' ), 99 );
+		add_filter( 'wp_script_attributes', array( __CLASS__, 'tag_attributes' ) );
+		add_filter( 'wp_inline_script_attributes', array( __CLASS__, 'tag_attributes' ) );
 		add_shortcode( 'nemvo_analytics_optout', array( __CLASS__, 'optout' ) );
+	}
+
+	/**
+	 * Add the opt-out attributes to the tracker's script tags.
+	 *
+	 * @param array $attributes Tag attributes.
+	 * @return array
+	 */
+	public static function tag_attributes( $attributes ) {
+		if ( isset( $attributes['id'] ) && 0 === strpos( (string) $attributes['id'], self::HANDLE . '-js' ) ) {
+			$attributes += self::script_attributes();
+		}
+		return $attributes;
 	}
 
 	/**
@@ -38,13 +69,12 @@ class Tracker {
 	 */
 	private static function script_attributes() {
 		return array(
-			'id'                => 'nva-tracker',
-			'data-cfasync'      => 'false',
-			'data-no-optimize'  => '1',
-			'data-no-defer'     => '1',
-			'data-no-minify'    => '1',
-			'data-noptimize'    => '1',
-			'nowprocket'        => true,
+			'data-cfasync'            => 'false',
+			'data-no-optimize'        => '1',
+			'data-no-defer'           => '1',
+			'data-no-minify'          => '1',
+			'data-noptimize'          => '1',
+			'nowprocket'              => true,
 			'data-pagespeed-no-defer' => true,
 		);
 	}
@@ -64,8 +94,14 @@ class Tracker {
 			$atts,
 			'nemvo_analytics_optout'
 		);
-		$js   = '(function(){var b=document.querySelectorAll("[data-nva-optout]");b.forEach(function(c){try{c.checked=localStorage.getItem("nva_ignore")!=="1";}catch(e){c.disabled=true;}c.addEventListener("change",function(){try{if(c.checked){localStorage.removeItem("nva_ignore");}else{localStorage.setItem("nva_ignore","1");}}catch(e){}});});})();';
-		return '<label class="nva-optout"><input type="checkbox" data-nva-optout checked> ' . esc_html( $atts['label'] ) . '</label>' . wp_get_inline_script_tag( $js );
+		// The flag the tracker checks; "nva_ignore" is its name from before 1.0.3.
+		$js = '(function(){var k="nemvo-analytics-ignore",o="nva_ignore";document.querySelectorAll("[data-nemvo-analytics-optout]").forEach(function(c){try{c.checked=localStorage.getItem(k)!=="1"&&localStorage.getItem(o)!=="1";}catch(e){c.disabled=true;}c.addEventListener("change",function(){try{localStorage.removeItem(o);if(c.checked){localStorage.removeItem(k);}else{localStorage.setItem(k,"1");}}catch(e){}});});})();';
+		if ( ! wp_script_is( self::OPTOUT_HANDLE, 'registered' ) ) {
+			wp_register_script( self::OPTOUT_HANDLE, false, array(), NEMVO_ANALYTICS_VERSION, true );
+			wp_add_inline_script( self::OPTOUT_HANDLE, $js );
+		}
+		wp_enqueue_script( self::OPTOUT_HANDLE );
+		return '<label class="nva-optout"><input type="checkbox" data-nemvo-analytics-optout checked> ' . esc_html( $atts['label'] ) . '</label>';
 	}
 
 	/**
@@ -135,9 +171,9 @@ class Tracker {
 	}
 
 	/**
-	 * Print the tracker in the footer.
+	 * Enqueue the tracker (printed in the footer).
 	 */
-	public static function output() {
+	public static function enqueue() {
 		if ( ! self::should_track() ) {
 			return;
 		}
@@ -155,8 +191,8 @@ class Tracker {
 			'diag'      => Diagnostics::active(),
 			'pv'        => self::$pv,
 		);
+		$config = 'window.nemvoAnalyticsConfig=' . wp_json_encode( $config ) . ';';
 
-		$json = wp_json_encode( $config );
 		$file = NEMVO_ANALYTICS_DIR . 'assets/js/tracker.min.js';
 		if ( ! is_readable( $file ) ) {
 			$file = NEMVO_ANALYTICS_DIR . 'assets/js/tracker.js';
@@ -164,17 +200,13 @@ class Tracker {
 
 		if ( Settings::get( 'inline_script' ) && is_readable( $file ) ) {
 			// Inline: no extra request, nothing for URL-based blockers to match.
-			$js = file_get_contents( $file ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-			wp_print_inline_script_tag( 'window.nvaConfig=' . $json . ";\n" . $js, self::script_attributes() );
-			return;
+			wp_register_script( self::HANDLE, false, array(), NEMVO_ANALYTICS_VERSION, true );
+			wp_add_inline_script( self::HANDLE, $config . "\n" . file_get_contents( $file ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- the plugin's own script, printed inline.
+		} else {
+			wp_register_script( self::HANDLE, NEMVO_ANALYTICS_URL . 'assets/js/tracker.js', array(), NEMVO_ANALYTICS_VERSION, true );
+			wp_script_add_data( self::HANDLE, 'strategy', 'defer' );
+			wp_add_inline_script( self::HANDLE, $config, 'before' );
 		}
-
-		wp_print_inline_script_tag( 'window.nvaConfig=' . $json . ';', array( 'id' => 'nva-config' ) + self::script_attributes() );
-		wp_print_script_tag(
-			array(
-				'src'   => NEMVO_ANALYTICS_URL . 'assets/js/tracker.js?ver=' . NEMVO_ANALYTICS_VERSION,
-				'defer' => true,
-			) + self::script_attributes()
-		);
+		wp_enqueue_script( self::HANDLE );
 	}
 }

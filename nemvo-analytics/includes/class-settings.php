@@ -16,12 +16,22 @@ defined( 'ABSPATH' ) || exit;
  *  - SERVICES_OPTION: the Valkey queue and the Cap server.
  * Connections can also come from wp-config.php constants or environment
  * variables (see env()), which always win over the saved values.
+ * DB_OPTION and SERVICES_OPTION are not autoloaded, and the passwords and
+ * keys in them are stored encrypted (see Crypto).
  */
 class Settings {
 
 	const OPTION          = 'nemvo_analytics_settings';
 	const DB_OPTION       = 'nemvo_analytics_db';
 	const SERVICES_OPTION = 'nemvo_analytics_services';
+
+	/**
+	 * Encrypted fields per option.
+	 */
+	const SECRETS = array(
+		self::DB_OPTION       => array( 'password' ),
+		self::SERVICES_OPTION => array( 'queue_password', 'cap_secret' ),
+	);
 
 	/**
 	 * Request-level cache.
@@ -62,7 +72,8 @@ class Settings {
 			'geo_auto_update'     => 0,
 			'geo_precision'       => 'city',
 			'network_lookup'      => 1,
-			'rdns_lookup'         => 1,
+			// Off for new sites: a reverse DNS query goes to the server's resolver, which may be a public one.
+			'rdns_lookup'         => 0,
 			'bot_threshold'       => 50,
 			'pow_enabled'         => 1,
 			'retention_days'      => 395,
@@ -146,17 +157,48 @@ class Settings {
 	 * @return array
 	 */
 	public static function db_settings() {
-		$stored = get_option( self::DB_OPTION, array() );
-		return array_merge(
+		$stored          = get_option( self::DB_OPTION, array() );
+		$out             = array_merge(
 			array(
 				'host'     => '',
 				'name'     => '',
 				'user'     => '',
 				'password' => '',
-				'prefix'   => 'nemvo_',
+				'prefix'   => DB::EXTERNAL_PREFIX,
 			),
 			is_array( $stored ) ? $stored : array()
 		);
+		$out['password'] = Crypto::decrypt( $out['password'] );
+		return $out;
+	}
+
+	/**
+	 * Encrypt the secret fields of a connection option before it is saved.
+	 *
+	 * @param string $option DB_OPTION or SERVICES_OPTION.
+	 * @param array  $values Values with plain-text secrets.
+	 * @return array
+	 */
+	public static function encrypt_secrets( $option, array $values ) {
+		foreach ( self::SECRETS[ $option ] ?? array() as $key ) {
+			if ( isset( $values[ $key ] ) ) {
+				$values[ $key ] = Crypto::encrypt( $values[ $key ] );
+			}
+		}
+		return $values;
+	}
+
+	/**
+	 * Store the connection options encrypted and not autoloaded; plain-text
+	 * values saved before 1.0.3 are encrypted on the way (upgrade, activation).
+	 */
+	public static function protect_secrets() {
+		foreach ( array_keys( self::SECRETS ) as $option ) {
+			$stored = get_option( $option, null );
+			$values = is_array( $stored ) ? self::encrypt_secrets( $option, $stored ) : array();
+			delete_option( $option );
+			add_option( $option, $values, '', 'no' );
+		}
 	}
 
 	/**
@@ -166,7 +208,7 @@ class Settings {
 	 */
 	public static function services() {
 		$stored = get_option( self::SERVICES_OPTION, array() );
-		return array_merge(
+		$out    = array_merge(
 			array(
 				'queue_enabled'  => 0,
 				'queue_host'     => '',
@@ -182,6 +224,10 @@ class Settings {
 			),
 			is_array( $stored ) ? $stored : array()
 		);
+		foreach ( self::SECRETS[ self::SERVICES_OPTION ] as $key ) {
+			$out[ $key ] = Crypto::decrypt( $out[ $key ] );
+		}
+		return $out;
 	}
 
 	/**
@@ -279,17 +325,18 @@ class Settings {
 		$current = self::db_settings();
 		// The fields are not shown when wp-config.php or the environment configures the database.
 		if ( ! is_array( $input ) ) {
-			return $current;
+			return self::encrypt_secrets( self::DB_OPTION, $current );
 		}
-		$prefix = preg_replace( '/[^A-Za-z0-9_]/', '', (string) ( $input['prefix'] ?? 'nemvo_' ) );
-		return array(
+		$prefix = preg_replace( '/[^A-Za-z0-9_]/', '', (string) ( $input['prefix'] ?? DB::EXTERNAL_PREFIX ) );
+		$out    = array(
 			'host'     => sanitize_text_field( $input['host'] ?? '' ),
 			'name'     => (string) preg_replace( '/[^A-Za-z0-9_\-$]/', '', (string) ( $input['name'] ?? '' ) ),
 			'user'     => sanitize_text_field( $input['user'] ?? '' ),
 			// An empty password field means "keep the stored one".
 			'password' => ( isset( $input['password'] ) && '' !== $input['password'] ) ? (string) $input['password'] : $current['password'],
-			'prefix'   => '' === $prefix ? 'nemvo_' : $prefix,
+			'prefix'   => '' === $prefix || DB::LEGACY_PREFIX === $prefix ? DB::EXTERNAL_PREFIX : $prefix,
 		);
+		return self::encrypt_secrets( self::DB_OPTION, $out );
 	}
 
 	/**
@@ -301,7 +348,7 @@ class Settings {
 	public static function sanitize_services( $input ) {
 		$current = self::services();
 		if ( ! is_array( $input ) ) {
-			return $current;
+			return self::encrypt_secrets( self::SERVICES_OPTION, $current );
 		}
 		$url = static function ( $value ) {
 			return untrailingslashit( esc_url_raw( trim( (string) $value ), array( 'http', 'https' ) ) );
@@ -330,7 +377,8 @@ class Settings {
 			$out['cap_enabled'] = 0;
 			add_settings_error( self::SERVICES_OPTION, 'cap', __( 'Cap was not turned on because the server address, site key or secret key is missing.', 'nemvo-analytics' ) );
 		}
-		return $out;
+		Cap::reset();
+		return self::encrypt_secrets( self::SERVICES_OPTION, $out );
 	}
 
 	/**

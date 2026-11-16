@@ -2,21 +2,21 @@
 (function () {
 	'use strict';
 
-	var cfg = window.nvaSettings;
+	var cfg = window.nemvoAnalyticsSettings;
 	var i18n = window.wp.i18n;
 	var __ = i18n.__;
 	var sprintf = i18n.sprintf;
 
 	// Same theme as the dashboard (chosen there with the theme button).
 	try {
-		var theme = JSON.parse(localStorage.getItem('nva-theme') || '"auto"');
+		var theme = JSON.parse(localStorage.getItem('nemvo-analytics-theme') || localStorage.getItem('nva-theme') || '"auto"');
 		if (theme === 'light' || theme === 'dark') {
 			document.body.setAttribute('data-nva-theme', theme);
 		}
 	} catch (e) {}
 
 	function url(path) {
-		// rest_url() may be pretty (/wp-json/nemvo/v1) or plain (?rest_route=/nemvo/v1).
+		// rest_url() may be pretty (/wp-json/nemvo-analytics/v1) or plain (?rest_route=/nemvo-analytics/v1).
 		return cfg.root.replace(/\/$/, '') + path;
 	}
 
@@ -74,6 +74,21 @@
 			div.append(dt, dd);
 			return div;
 		}));
+		if (data.credit) {
+			// DB-IP Lite is CC BY 4.0: credit it wherever its data is shown.
+			var div = document.createElement('div');
+			var dt = document.createElement('dt');
+			var dd = document.createElement('dd');
+			var link = document.createElement('a');
+			dt.textContent = __('Source', 'nemvo-analytics');
+			link.href = 'https://db-ip.com';
+			link.target = '_blank';
+			link.rel = 'noopener';
+			link.textContent = __('IP geolocation by DB-IP', 'nemvo-analytics');
+			dd.append(link);
+			div.append(dt, dd);
+			box.append(div);
+		}
 		box.hidden = false;
 	}
 

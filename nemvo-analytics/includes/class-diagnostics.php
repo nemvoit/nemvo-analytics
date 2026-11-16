@@ -121,18 +121,19 @@ class Diagnostics {
 	 */
 	public static function reasons() {
 		return array(
-			'tracking_off' => __( 'Tracking is paused in the settings.', 'nemvo-analytics' ),
-			'payload'      => __( 'The request was not a valid tracker hit.', 'nemvo-analytics' ),
-			'gpc'          => __( 'The browser sent Global Privacy Control (Firefox and Brave private windows, DuckDuckGo) and "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
-			'dnt'          => __( 'The browser sent Do Not Track and "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
-			'ip'           => __( 'The visitor\'s IP address is in "Excluded IP addresses".', 'nemvo-analytics' ),
-			'host'         => __( 'The page address is not this site\'s address (see "host" in the details).', 'nemvo-analytics' ),
-			'path'         => __( 'The page is in "Excluded paths".', 'nemvo-analytics' ),
-			'database'     => __( 'The statistics database could not be written.', 'nemvo-analytics' ),
-			'client_gpc'   => __( 'The tracker stopped in the browser: it sends Global Privacy Control (Firefox and Brave private windows, Brave, DuckDuckGo) and Tracking › "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
-			'client_dnt'   => __( 'The tracker stopped in the browser: it sends Do Not Track (in Chrome: Settings › Privacy and security › Third-party cookies › "Send a Do Not Track request") and Tracking › "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
-			'client_ignore' => __( 'This browser excluded itself with #nva-ignore. Open any page with #nva-track at the end of the address to undo it.', 'nemvo-analytics' ),
-			'client_error' => __( 'The tracker failed in the browser:', 'nemvo-analytics' ),
+			'tracking_off'  => __( 'Tracking is paused in the settings.', 'nemvo-analytics' ),
+			'payload'       => __( 'The request was not a valid tracker hit.', 'nemvo-analytics' ),
+			'gpc'           => __( 'The browser sent Global Privacy Control (Firefox and Brave private windows, DuckDuckGo) and "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
+			'dnt'           => __( 'The browser sent Do Not Track and "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
+			'ip'            => __( 'The visitor\'s IP address is in "Excluded IP addresses".', 'nemvo-analytics' ),
+			'host'          => __( 'The page address is not this site\'s address (see "host" in the details).', 'nemvo-analytics' ),
+			'path'          => __( 'The page is in "Excluded paths".', 'nemvo-analytics' ),
+			'database'      => __( 'The statistics database could not be written.', 'nemvo-analytics' ),
+			'client_gpc'    => __( 'The tracker stopped in the browser: it sends Global Privacy Control (Firefox and Brave private windows, Brave, DuckDuckGo) and Tracking › "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
+			'client_dnt'    => __( 'The tracker stopped in the browser: it sends Do Not Track (in Chrome: Settings › Privacy and security › Third-party cookies › "Send a Do Not Track request") and Tracking › "Respect Do Not Track and Global Privacy Control" is on.', 'nemvo-analytics' ),
+			'client_ignore' => __( 'This browser excluded itself with #nemvo-analytics-ignore (or the opt-out checkbox). Open any page with #nemvo-analytics-track at the end of the address to undo it.', 'nemvo-analytics' ),
+			'rate'          => __( 'The visitor sent more hits in a minute than a person would; the rest of that minute is ignored.', 'nemvo-analytics' ),
+			'client_error'  => __( 'The tracker failed in the browser:', 'nemvo-analytics' ),
 		);
 	}
 
@@ -152,15 +153,17 @@ class Diagnostics {
 
 		// 1. The home page as a visitor sees it, and a fresh copy past any page cache.
 		$plain = wp_remote_get( home_url( '/' ), $args );
-		$fresh = wp_remote_get( add_query_arg( 'nva-check', wp_rand(), home_url( '/' ) ), $args );
+		$fresh = wp_remote_get( add_query_arg( 'nemvo-analytics-check', wp_rand(), home_url( '/' ) ), $args );
 		if ( is_wp_error( $plain ) ) {
 			/* translators: %s: error message */
 			$out[] = array( 'warning', __( 'The server cannot load its own home page', 'nemvo-analytics' ), sprintf( __( 'So the page could not be checked from here (%s). Use the live check below instead.', 'nemvo-analytics' ), $plain->get_error_message() ) );
 		} else {
 			$has_tracker = static function ( $response ) {
-				return ! is_wp_error( $response ) && false !== strpos( wp_remote_retrieve_body( $response ), 'id="nva-tracker"' );
+				// Pages cached before 1.0.3 carry the tracker with the id "nva-tracker".
+				$body = is_wp_error( $response ) ? '' : wp_remote_retrieve_body( $response );
+				return false !== strpos( $body, 'id="' . Tracker::HANDLE . '-js' ) || false !== strpos( $body, 'id="nva-tracker"' );
 			};
-			$code = (int) wp_remote_retrieve_response_code( $plain );
+			$code        = (int) wp_remote_retrieve_response_code( $plain );
 			if ( $has_tracker( $plain ) ) {
 				$out[] = array( 'good', __( 'The tracker is on the home page', 'nemvo-analytics' ), '' );
 			} elseif ( $has_tracker( $fresh ) ) {
@@ -230,7 +233,7 @@ class Diagnostics {
 				$db->query( $db->prepare( 'DELETE FROM `' . DB::table( 'sessions' ) . '` WHERE id = %d AND pageviews <= 1', $row->session_id ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
 			} elseif ( in_array( $code, array( 401, 403 ), true ) ) {
 				/* translators: %d: HTTP status */
-				$out[] = array( 'critical', sprintf( __( 'The collection endpoint is blocked (HTTP %d)', 'nemvo-analytics' ), $code ), __( 'A security plugin or firewall blocks /wp-json/nemvo/v1/e. Allow it: it must accept anonymous POST requests.', 'nemvo-analytics' ) );
+				$out[] = array( 'critical', sprintf( __( 'The collection endpoint is blocked (HTTP %d)', 'nemvo-analytics' ), $code ), __( 'A security plugin or firewall blocks /wp-json/nemvo-analytics/v1/e. Allow it, and /wp-json/nemvo/v1/e for pages cached before version 1.0.3: they must accept anonymous POST requests.', 'nemvo-analytics' ) );
 			} elseif ( $code >= 500 ) {
 				/* translators: %d: HTTP status */
 				$out[] = array( 'critical', sprintf( __( 'The collection endpoint fails (HTTP %d)', 'nemvo-analytics' ), $code ), __( 'Check the PHP error log; with WP_DEBUG_LOG on, WordPress writes it to wp-content/debug.log.', 'nemvo-analytics' ) );

@@ -66,8 +66,8 @@ class Queue {
 		$cfg = null;
 		$url = Settings::env( 'NEMVO_ANALYTICS_QUEUE_URL' );
 		if ( '' !== $url ) {
-			$parts = wp_parse_url( $url );
-			$cfg   = array(
+			$parts     = wp_parse_url( $url );
+			$cfg       = array(
 				'source'   => defined( 'NEMVO_ANALYTICS_QUEUE_URL' ) ? 'constant' : 'env',
 				'host'     => (string) ( $parts['host'] ?? '' ),
 				'port'     => (int) ( $parts['port'] ?? 6379 ),
@@ -76,15 +76,15 @@ class Queue {
 				'prefix'   => '' !== Settings::env( 'NEMVO_ANALYTICS_QUEUE_PREFIX' ) ? Settings::env( 'NEMVO_ANALYTICS_QUEUE_PREFIX' ) : 'nemvo:',
 			);
 			self::$cfg = $cfg;
-		return $cfg;
+			return $cfg;
 		}
 		$s = Settings::services();
 		if ( ! $s['queue_enabled'] || '' === $s['queue_host'] ) {
-			$cfg = null;
+			$cfg       = null;
 			self::$cfg = $cfg;
-		return $cfg;
+			return $cfg;
 		}
-		$cfg = self::from_settings( $s );
+		$cfg       = self::from_settings( $s );
 		self::$cfg = $cfg;
 		return $cfg;
 	}
@@ -125,8 +125,9 @@ class Queue {
 	}
 
 	/**
-	 * Name of the list holding hits.
+	 * Name of a key (the list holding hits by default).
 	 *
+	 * @param string $name Key name without the prefix.
 	 * @return string
 	 */
 	private static function key( $name = 'hits' ) {
@@ -239,8 +240,9 @@ class Queue {
 				self::requeue( $hits );
 				break;
 			}
-			$done += count( $hits );
-		} while ( count( $hits ) === $batch && microtime( true ) - $start < $seconds );
+			$popped = count( $hits );
+			$done  += $popped;
+		} while ( $popped === $batch && microtime( true ) - $start < $seconds );
 
 		if ( null !== $hits ) {
 			update_option(
@@ -392,14 +394,16 @@ class Queue {
 				if ( $len < 0 ) {
 					return null;
 				}
-				$buf = '';
-				while ( strlen( $buf ) < $len + 2 ) {
-					$chunk = fread( self::$sock, $len + 2 - strlen( $buf ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread
+				$buf  = '';
+				$want = $len + 2;
+				while ( $want > 0 ) {
+					$chunk = fread( self::$sock, $want ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread -- reading from the Valkey socket.
 					if ( false === $chunk || '' === $chunk ) {
 						self::fail( __( 'The queue did not answer in time.', 'nemvo-analytics' ) );
 						return null;
 					}
-					$buf .= $chunk;
+					$buf  .= $chunk;
+					$want -= strlen( $chunk );
 				}
 				return substr( $buf, 0, $len );
 			case '*':

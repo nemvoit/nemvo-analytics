@@ -51,6 +51,7 @@ final class Plugin {
 		Tracker::init();
 		Cron::init();
 		Health::init();
+		Install::maybe_upgrade();
 
 		if ( is_admin() ) {
 			Admin::init();
@@ -92,6 +93,7 @@ final class Plugin {
 		if ( false === get_option( Settings::OPTION ) ) {
 			add_option( Settings::OPTION, Settings::defaults() );
 		}
+		Install::upgrade();
 		DB::install();
 		Cron::schedule();
 		set_transient( 'nemvo_analytics_activated', 1, HOUR_IN_SECONDS );

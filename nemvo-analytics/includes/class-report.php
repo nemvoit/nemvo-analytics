@@ -87,11 +87,20 @@ class Report {
 			);
 		}
 
-		$lists = array(
+		$lists     = array(
 			__( 'Top pages', 'nemvo-analytics' )   => array( $stats->breakdown( 'page', array( 'limit' => 5 ) )['rows'], 'pageviews' ),
 			__( 'Top sources', 'nemvo-analytics' ) => array( $stats->breakdown( 'source', array( 'limit' => 5 ) )['rows'], 'visitors' ),
 			__( 'Countries', 'nemvo-analytics' )   => array( $stats->breakdown( 'country', array( 'limit' => 5 ) )['rows'], 'visitors' ),
-			__( 'Companies', 'nemvo-analytics' )   => array( $stats->breakdown( 'company', array( 'limit' => 10, 'sort' => 'visits' ) )['rows'], 'visits' ),
+			__( 'Companies', 'nemvo-analytics' )   => array(
+				$stats->breakdown(
+					'company',
+					array(
+						'limit' => 10,
+						'sort'  => 'visits',
+					)
+				)['rows'],
+				'visits',
+			),
 		);
 		$countries = Geo::countries();
 
@@ -123,7 +132,7 @@ class Report {
 			'<div style="%sbackground:#f9f9f7;padding:24px"><div style="max-width:640px;margin:0 auto;background:#fcfcfb;border:1px solid %s;border-radius:12px;padding:24px">'
 			. '<div style="font-size:12px;color:%s">%s</div><h2 style="margin:4px 0 8px;font-size:20px;color:%s">%s</h2>'
 			. '<table cellspacing="0" cellpadding="0"><tr>%s</tr></table>%s'
-			. '<p style="margin-top:24px"><a href="%s" style="color:#2a78d6">%s</a></p></div></div>',
+			. '<p style="margin-top:24px"><a href="%s" style="color:#2a78d6">%s</a></p>%s</div></div>',
 			$font,
 			$line,
 			$muted,
@@ -134,7 +143,9 @@ class Report {
 			$cells,
 			$sections,
 			esc_url( admin_url( 'admin.php?page=nemvo-analytics#range=7d' ) ),
-			esc_html__( 'Open the dashboard', 'nemvo-analytics' )
+			esc_html__( 'Open the dashboard', 'nemvo-analytics' ),
+			// DB-IP Lite is CC BY 4.0: credit it where its data (countries, companies) is shown.
+			Geo::dbip_in_use() ? sprintf( '<p style="font-size:12px;color:%s"><a href="https://db-ip.com" style="color:%s">%s</a></p>', $muted, $muted, esc_html__( 'IP geolocation by DB-IP', 'nemvo-analytics' ) ) : ''
 		);
 	}
 

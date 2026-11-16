@@ -7,11 +7,11 @@ Self-hosted, cookieless web analytics for WordPress, with company identification
 ## What it does
 
 - **The usual reports.** Visitors, visits, pageviews, duration, bounce rate, time on page, scroll depth and conversions, compared with the previous period or the same period last year. You also get traffic sources and UTM campaigns, top, entry and exit pages, page journeys, a world map, devices, a weekday × hour heatmap, goals and events.
-- **Who visits.** Every visit's network is looked up locally. Organisations with their own network are named. On internet-provider networks, reverse DNS tells an office line (`fw.acme.se` → *acme.se*) from a home line, so you can see when a prospect's office reads your pricing page.
+- **Who visits.** Every visit's network is looked up locally. Organisations with their own network are named. On internet-provider networks, optional reverse DNS (off by default) tells an office line (`fw.acme.se` → *acme.se*) from a home line, so you can see when a prospect's office reads your pricing page.
 - **Server hits and JavaScript together.** Every page request is recorded on the server and matched with the tracker's hit, so bots and visitors without JavaScript are counted, and nothing twice.
 - **People and bots, separated.** Nothing is blocked. Every visit gets a bot score from request, network, browser and behaviour signals, plus an optional proof of work: built in, or a self-hosted [Cap](https://capjs.js.org) server. The dashboard shows people by default and can switch to automated traffic, listing what was filtered out and why.
 - **Drill down anywhere.** Every chart point, map country, heatmap cell and table row filters the whole dashboard. The visit log opens single visits with their pages, time on each page, events and classification.
-- **Private by design.** No cookies, no local storage and no fingerprinting. Visitors are counted with a daily-salted hash, and IP addresses and hostnames are never stored.
+- **Private by design.** No cookies, no identifiers in the browser and no fingerprinting; local storage only holds an opt-out flag for visitors who opt out. Visitors are counted with a daily-salted hash, and IP addresses and hostnames are never stored.
 - **Fast.** The tracker is about 3 KB gzipped and printed inline. A hit is a handful of small queries in one transaction, written after the response has been sent. An optional Valkey queue writes batches of hundreds.
 
 ## Requirements
@@ -30,7 +30,8 @@ Everything can be set on the settings page. Connections can also come from `wp-c
 
 | Variable | Purpose |
 |---|---|
-| `NEMVO_ANALYTICS_DB_HOST`, `_NAME`, `_USER`, `_PASSWORD`, `_PREFIX` | External statistics database |
+| `NEMVO_ANALYTICS_DB_HOST`, `_NAME`, `_USER`, `_PASSWORD`, `_PREFIX` | External statistics database. `_PREFIX` defaults to `nemvo_analytics_`; the old default `nemvo_` is treated as `nemvo_analytics_` and its tables are renamed. |
+| `NEMVO_ANALYTICS_KEY` | Key for the passwords and keys saved on the settings page (default: derived from the WordPress salts) |
 | `NEMVO_ANALYTICS_STORAGE` | `local` or `external`: where a new installation starts. After that, **Move statistics** on the settings page decides. |
 | `NEMVO_ANALYTICS_QUEUE_URL` | `redis://[:password@]host[:port][/db]` turns the queue on |
 | `NEMVO_ANALYTICS_QUEUE_PREFIX` | Key prefix (default `nemvo:`) |
@@ -110,7 +111,7 @@ Each piece is optional: leave out the services and variables you don't need. The
 ```
 page request ─► template_redirect: recorded on the server (pageview id P)
                 │  the page carries P to the tracker
-browser ── tracker.js (inline, ~3 KB) ──► POST /wp-json/nemvo/v1/e  (pageview P)
+browser ── tracker.js (inline, ~3 KB) ──► POST /wp-json/nemvo-analytics/v1/e  (pageview P)
                                              │  validate, attribute source, parse device,
                                              │  locate (IP database or time zone), network + company,
                                              │  bot signals; the IP stays in memory only
@@ -128,7 +129,8 @@ browser ── tracker.js (inline, ~3 KB) ──► POST /wp-json/nemvo/v1/e  (p
 - **Engaged time** only counts while the tab is visible and the visitor was active in the last five minutes.
 - **Networks:** the ASN database gives the network owner. Hosting, education and government networks are recognised by name and number. On ISP networks, a forward-confirmed reverse DNS name separates home, mobile and business lines.
 - **Bot score:** the sum of signal weights, from 0 to 100. Visits at or above the threshold (50 by default) count as automated. The settings page lists all signals and their weights.
-- **Storage:** WordPress's own database by default, in `{prefix}nemvo_sessions`, `_pageviews` and `_events`. Statistics can be moved to an external MySQL/MariaDB database and back while tracking continues.
+- **Storage:** WordPress's own database by default, in `{prefix}nemvo_analytics_sessions`, `_pageviews`, `_events` and `_meta` (up to 1.0.2 `{prefix}nemvo_*`; renamed on update in one atomic `RENAME TABLE`, only when the new tables don't exist yet). Statistics can be moved to an external MySQL/MariaDB database and back while tracking continues. `Install::DB_VERSION` drives upgrades; `dbDelta` keeps both databases' tables current.
+- **REST:** `nemvo-analytics/v1`. The public routes are `POST /e` (hits) and `POST /cap/challenge|redeem` (the Cap relay), throttled per anonymous visitor (`nemvo_analytics_rate_limit`). Reports (`/stats/*`) and admin actions (`/admin/*`) need a capability, answer 401/403 before looking at parameters and are not in the REST index. All routes also answer under `nemvo/v1`, the namespace up to 1.0.2, for pages cached before an update.
 
 ## WP-CLI
 
@@ -140,7 +142,7 @@ wp nemvo-analytics lookup 203.0.113.7         # location, network and company fo
 wp nemvo-analytics geoip-update --edition=asn # country | city | asn
 wp nemvo-analytics purge --before=2025-01-01
 wp nemvo-analytics report --to=you@example.com
-wp nemvo-analytics seed --days=90 --reset     # demo traffic, test sites only
+wp nemvo-analytics seed --days=90 --reset     # demo traffic (only in this repository, not in the zip)
 ```
 
 ## Development
@@ -165,7 +167,11 @@ docker compose -f .devcontainer/docker-compose.yml exec wordpress bash /workspac
 dc="docker compose -f .devcontainer/docker-compose.yml exec -T wordpress"
 $dc wp eval-file /workspace/tests/pipeline-test.php   # collection, queue, bot signals, PoW, Cap relay, migration, reports
 $dc wp eval-file /workspace/tests/network-test.php    # company/network classification and reverse DNS
+$dc wp eval-file /workspace/tests/diagnostics-test.php  # Check tracking
+$dc wp eval-file /workspace/tests/matching-test.php   # server hits matched with tracker hits
+phpcs --standard=phpcs.xml.dist                       # WordPress Coding Standards 3 + PHPCompatibilityWP
 cd tests/e2e && npm install && npm test                # real Chrome: tracker, dashboard, settings, migration UI
+tests/upgrade-test.sh dist/nemvo-analytics-1.0.2.zip dist/nemvo-analytics-1.0.3.zip  # update from an older release, throwaway containers
 ```
 
 `tests/e2e/screenshots.mjs` regenerates the screenshots, icon and banners in `.wordpress-org/`.
@@ -174,10 +180,35 @@ cd tests/e2e && npm install && npm test                # real Chrome: tracker, d
 
 ```sh
 ./build.sh                                     # dist/nemvo-analytics-<version>.zip
-./smoke-test.sh dist/nemvo-analytics-1.0.0.zip # clean WordPress + Plugin Check + PHP 7.4 lint
+./smoke-test.sh dist/nemvo-analytics-1.0.3.zip # clean WordPress + Plugin Check (no errors or warnings) + PHP 7.4 lint
 ```
 
 `tools/minify-tracker.sh` regenerates the inline copy of the tracker; `build.sh` runs it. See [PUBLISHING.md](PUBLISHING.md) for releases and WordPress.org.
+
+## Changelog
+
+### 1.0.3
+
+- Prefixes: tables `{prefix}nemvo_analytics_*` (renamed from `{prefix}nemvo_*` by a versioned upgrade, `Install::DB_VERSION` 2, also in an external database with the old default prefix `nemvo_`), REST namespace `nemvo-analytics/v1` (the `nemvo/v1` routes stay as aliases), script handles `nemvo-analytics-*`, JS globals `nemvoAnalyticsConfig`, `nemvoAnalyticsTrack`, `nemvoAnalyticsSettings`, `nemvoAnalyticsDashboard`, attributes `data-nemvo-analytics-*`, local storage keys `nemvo-analytics-*`, cron schedule `nemvo_analytics_minute`, query args `nemvo-analytics-check`, `nemvo_analytics_report`. `nvaTrack`, `data-nva-*`, `#nva-ignore` and the old storage keys keep working. CSS classes and tokens keep `nva-`.
+- Reverse DNS is off by default on new sites (existing settings are kept) and needs the ASN database.
+- Secrets saved on the settings page are encrypted with sodium (key from `NEMVO_ANALYTICS_KEY` or the salts) and not autoloaded.
+- REST hardening: `show_in_index => false` for every non-public route; arguments are only coerced before the permission check; purge, install and migrate require the `wp_rest` nonce; per-visitor throttle on `/e` and the Cap relay.
+- Cap connection test fixed (token `<site_key>:connection-test:0`); Site Health reports keys that Cap rejects.
+- CSV formula escaping (server export and dashboard tables), robust payload casting, `wp_set_script_translations` for the settings script, the dashboard widget style and the tracker through registered handles, DB-IP credit in the weekly email and the lookup, uninstall removes the diagnostics log and handles multisite.
+- readme.txt: complete External services, exact source commits for the Cap widget, the Cap WASM solver and HashWX (LGPL-3.0, its license texts added), full Apache-2.0 text for Cap.
+- PHPCS (WPCS 3 + PHPCompatibilityWP) clean and in CI; the smoke test requires Plugin Check without warnings; the seeder is left out of the zip and the WordPress.org deploy.
+
+### 1.0.2
+
+- The proxy warning in the setup checklist follows the current "Forwarded visitor addresses" setting and clears once visitor addresses come through.
+
+### 1.0.1
+
+- Server-side hits matched with the tracker's hit by pageview id; Settings › Check tracking with a live log; "Forwarded visitor addresses" (Automatic, Always, Never); datacenter weight 30; map view buttons fixed.
+
+### 1.0.0
+
+- First release.
 
 ## License
 
