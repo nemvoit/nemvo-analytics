@@ -21,7 +21,7 @@ msgstr ""
 
 #. Plugin URI of the plugin
 #: nemvo-analytics.php
-msgid "https://github.com/fpoller/nemvo-analytics"
+msgid "https://github.com/nemvoit/nemvo-analytics"
 msgstr ""
 
 #. Description of the plugin

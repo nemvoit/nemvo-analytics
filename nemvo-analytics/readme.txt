@@ -73,7 +73,7 @@ For stronger proof, connect a self-hosted [Cap](https://capjs.js.org) server. Th
 * Configuration through wp-config.php constants or environment variables (`NEMVO_ANALYTICS_DB_*`, `NEMVO_ANALYTICS_QUEUE_URL`, `NEMVO_ANALYTICS_CAP_*`, `_FILE` variants for Docker secrets). Passwords and keys saved on the settings page are stored encrypted (key from your WordPress salts, or `NEMVO_ANALYTICS_KEY`).
   The settings page shows ready-made Docker Compose examples.
 
-Source code and issue tracker: [github.com/fpoller/nemvo-analytics](https://github.com/fpoller/nemvo-analytics).
+Source code and issue tracker: [github.com/nemvoit/nemvo-analytics](https://github.com/nemvoit/nemvo-analytics).
 
 = Made for sites without page caching =
 

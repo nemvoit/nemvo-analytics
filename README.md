@@ -22,7 +22,7 @@ Nemvo Analytics is built for sites **without page caching or a CDN in front**. I
 
 ## Install
 
-Download `nemvo-analytics-x.y.z.zip` from [Releases](https://github.com/fpoller/nemvo-analytics/releases) and upload it under **Plugins › Add New › Upload Plugin**. Statistics are collected as soon as the plugin is active. Then open **Analytics › Settings**: its setup checklist shows what is worth doing next, such as downloading the free IP databases (countries, and networks for company identification) or adding goals.
+Download `nemvo-analytics-x.y.z.zip` from [Releases](https://github.com/nemvoit/nemvo-analytics/releases) and upload it under **Plugins › Add New › Upload Plugin**. Statistics are collected as soon as the plugin is active. Then open **Analytics › Settings**: its setup checklist shows what is worth doing next, such as downloading the free IP databases (countries, and networks for company identification) or adding goals.
 
 ## Configuration
 

@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name:       Nemvo Analytics
- * Plugin URI:        https://github.com/fpoller/nemvo-analytics
+ * Plugin URI:        https://github.com/nemvoit/nemvo-analytics
  * Description:       Privacy-friendly, self-hosted web analytics: traffic sources, pages, engagement, countries, visiting companies, devices and goals, with bot detection. No cookies, no third-party services.
  * Version:           1.0.3
  * Requires at least: 6.2

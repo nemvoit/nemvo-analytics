@@ -258,7 +258,7 @@ class Cli {
 	 */
 	public function seed( $args, $assoc_args ) {
 		if ( ! class_exists( Seeder::class ) ) {
-			\WP_CLI::error( 'The demo traffic generator is part of the development copy (https://github.com/fpoller/nemvo-analytics), not of the released plugin.' );
+			\WP_CLI::error( 'The demo traffic generator is part of the development copy (https://github.com/nemvoit/nemvo-analytics), not of the released plugin.' );
 		}
 		if ( ! DB::conn() || ! DB::maybe_install() ) {
 			\WP_CLI::error( 'Statistics database not available: ' . DB::error() );
