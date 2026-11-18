@@ -10,7 +10,7 @@ How Nemvo Analytics gets into the WordPress.org plugin directory, and how new ve
 
   ```sh
   ./build.sh
-  ./smoke-test.sh dist/nemvo-analytics-1.0.3.zip
+  ./smoke-test.sh dist/nemvo-analytics-1.0.4.zip
   ```
 
   Optionally, paste `readme.txt` into the [readme validator](https://wordpress.org/plugins/developers/readme-validator/).
@@ -51,7 +51,7 @@ Reviewers often ask about the following. The answers are already in `readme.txt`
 
 You get Subversion (SVN) access to `https://plugins.svn.wordpress.org/nemvo-analytics/`. SVN doesn't use your normal password: set an SVN password under [Edit profile → Account & Security](https://profiles.wordpress.org/me/profile/edit/group/3/?screen=svn-password).
 
-The plugin goes live when the approved version (below `<version>`, e.g. 1.0.3) is committed to SVN. Use one of the two ways below, not both.
+The plugin goes live when the approved version (below `<version>`, e.g. 1.0.4) is committed to SVN. Use one of the two ways below, not both.
 
 ### Option A: GitHub Actions (recommended)
 

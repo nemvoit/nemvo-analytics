@@ -1,6 +1,6 @@
 Cap widget, bundled so that visitors' browsers load nothing from a CDN.
 
-  cap.min.js           @cap.js/widget 0.1.58   Apache-2.0      LICENSE-cap.txt
+  cap.min.js           @cap.js/widget 0.1.63   Apache-2.0      LICENSE-cap.txt
   cap_wasm_bg.wasm     @cap.js/wasm 0.0.8      Apache-2.0      LICENSE-cap.txt
   hashwx.wasm          @cap.js/wasm 0.0.8      LGPL-3.0        LICENSE-hashwx.txt (+ LICENSE-gpl-3.0.txt)
   pako_inflate.min.js  pako 2.1.0              MIT and Zlib    LICENSE-pako.txt
@@ -11,8 +11,8 @@ Sources:
 
   cap.min.js
     Built from widget/src/src/cap.js and worker.js in https://github.com/tiagozip/cap
-    at commit 91b45ace6dc4ef57100e5f0f748efaae6417d70a ("widget@0.1.58"):
-    https://github.com/tiagozip/cap/tree/91b45ace6dc4ef57100e5f0f748efaae6417d70a/widget/src
+    at commit 18a975028e2de21acc9b3f99209439d3f09093e8 ("widget@0.1.63"):
+    https://github.com/tiagozip/cap/tree/18a975028e2de21acc9b3f99209439d3f09093e8/widget/src
     (byte-identical to widget/src/cap.min.js in that commit)
 
   cap_wasm_bg.wasm
@@ -37,4 +37,4 @@ never used: the tracker sets window.CAP_CUSTOM_WASM_URL, window.CAP_CUSTOM_HASHW
 window.CAP_PAKO_URL to the copies in this folder before the widget loads.
 pako is only loaded by browsers without DecompressionStream.
 The widget also links to trycap.dev (Cap's website) in its visible form, which the tracker never shows: it runs
-Cap invisibly.
+Cap invisibly. A console error message about Content Security Policy names a trycap.dev page as well.

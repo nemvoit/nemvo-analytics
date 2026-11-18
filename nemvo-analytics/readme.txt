@@ -4,7 +4,7 @@ Tags: analytics, statistics, privacy, bot detection, b2b
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.0.3
+Stable tag: 1.0.4
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
@@ -138,7 +138,7 @@ All bundled in `assets/vendor/` (see `assets/vendor/README.txt`), so browsers lo
 * chartjs-chart-geo 4.3.6, MIT, https://github.com/sgratzl/chartjs-chart-geo (includes parts of d3 and topojson-client, ISC)
 * chartjs-chart-matrix 3.1.0, MIT, https://github.com/kurkle/chartjs-chart-matrix
 * World map data from world-atlas 2.0.2 (ISC) and Natural Earth (public domain), simplified.
-* Cap widget 0.1.58 (`@cap.js/widget`, `cap.min.js`), Apache License 2.0. Readable source: [widget/src at commit 91b45ac](https://github.com/tiagozip/cap/tree/91b45ace6dc4ef57100e5f0f748efaae6417d70a/widget/src) of tiagozip/cap, the "widget@0.1.58" release.
+* Cap widget 0.1.63 (`@cap.js/widget`, `cap.min.js`), Apache License 2.0. Readable source: [widget/src at commit 18a9750](https://github.com/tiagozip/cap/tree/18a975028e2de21acc9b3f99209439d3f09093e8/widget/src) of tiagozip/cap, the "widget@0.1.63" release.
 * Cap WASM solver 0.0.8 (`@cap.js/wasm`, `cap_wasm_bg.wasm`), Apache License 2.0. Rust source: [wasm/src/rust at commit 8ad83fb](https://github.com/tiagozip/cap/tree/8ad83fb50eaefb7f113ca1ec508ce242ed75033d/wasm/src/rust), the "wasm@0.0.8" release.
 * HashWX (`hashwx.wasm`, shipped in `@cap.js/wasm` 0.0.8), GNU LGPL 3.0 (with the GNU GPL 3.0 it builds on, both texts in `assets/vendor/cap/`). C source: [tevador/hashwx at commit 74b567a](https://github.com/tevador/hashwx/tree/74b567a31276a4c5d7cb232a5b7639467f49f961), compiled to WebAssembly by the Cap project.
 * pako 2.1.0 (`pako_inflate.min.js`), MIT and Zlib, https://github.com/nodeca/pako/tree/2.1.0
@@ -156,6 +156,9 @@ The minified and WASM files are unmodified copies of the published npm packages.
 7. Settings with the setup checklist and Docker Compose instructions.
 
 == Changelog ==
+
+= 1.0.4 =
+* Changed: the bundled Cap widget is updated from 0.1.58 to 0.1.63. Only `cap.min.js` changes; the WASM solvers and pako stay the same, and the widget still loads nothing from other sites.
 
 = 1.0.3 =
 * Changed: reverse DNS lookups are off by default on new sites. Sites updating from an earlier version keep their setting. Reverse DNS also only runs with a network database installed.
@@ -188,6 +191,9 @@ The minified and WASM files are unmodified copies of the published npm packages.
 * First release.
 
 == Upgrade Notice ==
+
+= 1.0.4 =
+Updates the bundled Cap widget to 0.1.63.
 
 = 1.0.3 =
 Renames the plugin's database tables and REST routes (automatically; old routes keep working), encrypts saved passwords and fixes the Cap connection test. Reverse DNS is now off by default on new sites.

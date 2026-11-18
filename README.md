@@ -171,7 +171,7 @@ $dc wp eval-file /workspace/tests/diagnostics-test.php  # Check tracking
 $dc wp eval-file /workspace/tests/matching-test.php   # server hits matched with tracker hits
 phpcs --standard=phpcs.xml.dist                       # WordPress Coding Standards 3 + PHPCompatibilityWP
 cd tests/e2e && npm install && npm test                # real Chrome: tracker, dashboard, settings, migration UI
-tests/upgrade-test.sh dist/nemvo-analytics-1.0.2.zip dist/nemvo-analytics-1.0.3.zip  # update from an older release, throwaway containers
+tests/upgrade-test.sh dist/nemvo-analytics-1.0.3.zip dist/nemvo-analytics-1.0.4.zip  # update from an older release, throwaway containers
 ```
 
 `tests/e2e/screenshots.mjs` regenerates the screenshots, icon and banners in `.wordpress-org/`.
@@ -180,12 +180,16 @@ tests/upgrade-test.sh dist/nemvo-analytics-1.0.2.zip dist/nemvo-analytics-1.0.3.
 
 ```sh
 ./build.sh                                     # dist/nemvo-analytics-<version>.zip
-./smoke-test.sh dist/nemvo-analytics-1.0.3.zip # clean WordPress + Plugin Check (no errors or warnings) + PHP 7.4 lint
+./smoke-test.sh dist/nemvo-analytics-1.0.4.zip # clean WordPress + Plugin Check (no errors or warnings) + PHP 7.4 lint
 ```
 
 `tools/minify-tracker.sh` regenerates the inline copy of the tracker; `build.sh` runs it. See [PUBLISHING.md](PUBLISHING.md) for releases and WordPress.org.
 
 ## Changelog
+
+### 1.0.4
+
+- Cap widget 0.1.58 → 0.1.63 (`assets/vendor/cap/cap.min.js`, tiagozip/cap `18a9750`, the "widget@0.1.63" release). `@cap.js/wasm` 0.0.8, HashWX and pako 2.1.0 are unchanged. The tracker still runs Cap invisibly through `new Cap({ apiEndpoint }).solve()`.
 
 ### 1.0.3
 

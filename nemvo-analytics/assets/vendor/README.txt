@@ -12,7 +12,7 @@ countries.json                      world-atlas 2.0.2            ISC        http
                                     topojson-simplify (quantile 0.5) and re-quantized to 1e4. Country ids
                                     were changed from ISO numeric to ISO alpha-2 codes; the "land" object
                                     was removed.
-cap/                                @cap.js/widget 0.1.58 and @cap.js/wasm 0.0.8 (Apache-2.0),
+cap/                                @cap.js/widget 0.1.63 and @cap.js/wasm 0.0.8 (Apache-2.0),
                                     HashWX in hashwx.wasm (LGPL-3.0), pako 2.1.0 (MIT, Zlib).
                                     Exact sources in cap/README.txt.
 

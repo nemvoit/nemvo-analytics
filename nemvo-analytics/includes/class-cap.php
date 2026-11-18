@@ -20,7 +20,7 @@ defined( 'ABSPATH' ) || exit;
 class Cap {
 
 	/** Version of the Cap widget bundled in assets/vendor/cap. */
-	const WIDGET_VERSION = '0.1.58';
+	const WIDGET_VERSION = '0.1.63';
 
 	/**
 	 * Cached configuration (false = not read yet).
