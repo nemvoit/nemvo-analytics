@@ -34,7 +34,8 @@ Cap's upstream repository has no NOTICE file.
 
 cap.min.js contains fallback URLs on cdn.jsdelivr.net for the WASM solvers and pako. They are
 never used: the tracker sets window.CAP_CUSTOM_WASM_URL, window.CAP_CUSTOM_HASHWX_URL and
-window.CAP_PAKO_URL to the copies in this folder before the widget loads.
+window.CAP_PAKO_URL to the copies in this folder before the widget loads. It also sets
+window.CAP_ISOLATE, so instrumentation code from the Cap server runs in a frame isolated from the page.
 pako is only loaded by browsers without DecompressionStream.
 The widget also links to trycap.dev (Cap's website) in its visible form, which the tracker never shows: it runs
 Cap invisibly. A console error message about Content Security Policy names a trycap.dev page as well.

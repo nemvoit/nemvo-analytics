@@ -183,6 +183,8 @@
 		w.CAP_CUSTOM_WASM_URL = c.wasm;
 		w.CAP_CUSTOM_HASHWX_URL = c.hashwx;
 		w.CAP_PAKO_URL = c.pako;
+		/* Run Cap's instrumentation script in a frame isolated from the page (widget 0.1.58 always did). */
+		w.CAP_ISOLATE = true;
 		var s = d.createElement('script');
 		s.src = c.script;
 		s.async = true;

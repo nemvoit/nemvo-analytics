@@ -190,6 +190,7 @@ tests/upgrade-test.sh dist/nemvo-analytics-1.0.3.zip dist/nemvo-analytics-1.0.4.
 ### 1.0.4
 
 - Cap widget 0.1.58 → 0.1.63 (`assets/vendor/cap/cap.min.js`, tiagozip/cap `18a9750`, the "widget@0.1.63" release). `@cap.js/wasm` 0.0.8, HashWX and pako 2.1.0 are unchanged. The tracker still runs Cap invisibly through `new Cap({ apiEndpoint }).solve()`.
+- The tracker sets `window.CAP_ISOLATE`, so instrumentation code from the Cap server keeps running in a frame isolated from the page, as with 0.1.58. Cap site keys that block automated input or AI agents reject isolated solves (`instr_isolated`).
 
 ### 1.0.3
 
